@@ -8,11 +8,16 @@ theme.colors = {
     accent        = rgbm(0.35, 0.78, 1.0, 1),
     bg            = rgbm(0, 0, 0, 0.55),          -- top5 (panel plano)
     bg_card       = rgbm(0, 0, 0, 0.65),          -- profile/rival (CMRT gearbox)
+    panel_overlay = rgbm(1, 1, 1, 1),             -- capa encima de panel_card
+    leaderboard_overlay = rgbm(1, 1, 1, 1),       -- capa encima de leaderboard_panel
     panel_border  = rgbm(1, 1, 1, 0.06),
+    leaderboard_sep = rgbm(1, 1, 1, 0.22),
     avatar_ring   = rgbm(1, 1, 1, 0.35),
     avatar_fill   = rgbm(0.12, 0.12, 0.15, 1),
     tier_fallback = rgbm(0.85, 0.15, 0.12, 1),
     rival_tag     = rgbm(0.82, 0.12, 0.10, 1),
+    tab_active    = rgbm(0.35, 0.78, 1.0, 0.38),
+    tab_idle      = rgbm(1, 1, 1, 0.08),
 }
 
 theme.fonts = {}

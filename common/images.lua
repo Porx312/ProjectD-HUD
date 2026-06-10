@@ -114,23 +114,59 @@ function images.corners_all()
     return corners_all()
 end
 
+local function lua_sibling_asset(relative)
+    local lua_root = app_dir:match("^(.*)[/\\][^/\\]+[/\\]?$")
+    if lua_root == nil then return nil end
+    return lua_root .. relative
+end
+
+local function first_existing(paths)
+    for _, path in ipairs(paths) do
+        if path ~= nil and io.fileExists(path) then return path end
+    end
+    return nil
+end
+
 --- Fondo de tarjeta: máscara blanca + tinte en draw (ver draw.cmrt_panel).
 function images.get_card_panel()
-    local candidates = {
+    return first_existing({
         app_dir .. "/assets/panel_card.png",
         app_dir .. "/assets/tiers/panel_card.png",
-    }
-    for _, path in ipairs(candidates) do
-        if io.fileExists(path) then return path end
-    end
+        lua_sibling_asset("CMRT-Essential-HUD/assets/GEARBOX.png"),
+    })
+end
 
-    local lua_root = app_dir:match("^(.*)[/\\][^/\\]+[/\\]?$")
-    if lua_root ~= nil then
-        local cmrt = lua_root .. "CMRT-Essential-HUD/assets/GEARBOX.png"
-        if io.fileExists(cmrt) then return cmrt end
-    end
+--- Capa opcional encima de panel_card (profile/rival). Solo assets locales.
+function images.get_card_panel_overlay()
+    return first_existing({
+        app_dir .. "/assets/panel_overlay.png",
+        app_dir .. "/assets/panel_gradient.png",
+    })
+end
 
-    return nil
+--- Logo del HUD (cabecera leaderboard).
+function images.get_logo()
+    return first_existing({
+        app_dir .. "/assets/logo.png",
+        app_dir .. "/logo.png",
+        app_dir .. "/icon.png",
+    })
+end
+
+--- Fondo vertical del Top 10 / leaderboard.
+function images.get_leaderboard_panel()
+    return first_existing({
+        app_dir .. "/assets/leaderboard_panel.png",
+        app_dir .. "/assets/tiers/leaderboard_panel.png",
+    })
+end
+
+--- Capa encima del leaderboard (NO reutiliza el gradiente de profile).
+function images.get_leaderboard_panel_overlay()
+    return first_existing({
+        app_dir .. "/assets/leaderboard_overlay.png",
+        app_dir .. "/assets/leaderboard_gradient.png",
+    })
 end
 
 function images.init()
