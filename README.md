@@ -2,13 +2,13 @@
 
 Tres widgets CSP Lua con **datos falsos** ? sin API por ahora. **No depende de CMRT** ni de otras apps Lua.
 
-| Widget | Descripción |
+| Widget | Descripciï¿½n |
 |--------|-------------|
 | **ProjectD Top 10** | Ranking del servidor (clave futura: server + track + layout + car) |
 | **ProjectD Profile** | Tu perfil: foto, nombre, tier, coche, mejor tiempo |
 | **ProjectD Rival** | Piloto #rank-1: etiqueta "rival", misma info |
 
-## Instalación
+## Instalaciï¿½n
 
 Copia la carpeta completa `ProjectD-HUD` a:
 
@@ -16,7 +16,7 @@ Copia la carpeta completa `ProjectD-HUD` a:
 assettocorsa/apps/lua/ProjectD-HUD/
 ```
 
-Requiere CSP 0.1.76+. Activa las 3 apps en el menú de AC.
+Requiere CSP 0.1.76+. Activa las 3 apps en el menï¿½ de AC.
 
 ## Assets incluidos (standalone)
 
@@ -28,7 +28,10 @@ Todo debe vivir dentro de `ProjectD-HUD/`. Al instalar en otro PC, copia esta ca
 | `assets/leaderboard_panel.png` | Fondo Top 10 |
 | `assets/logo.png` | Cabecera del leaderboard |
 | `assets/tiers/tier0.png` ? `tier10.png` | Iconos de tier |
-| `icon.png` | Icono de la app en el menú CSP |
+| `fonts/ArchivoSemiExpanded-Regular.ttf` | Texto normal |
+| `fonts/ArchivoSemiExpanded-Medium.ttf` | Tiempos, coche (como CMRT) |
+| `fonts/ArchivoSemiExpanded-Bold.ttf` | Nombres, ranks, cabecera |
+| `icon.png` | Icono de la app en el men? CSP |
 
 ### Opcionales (solo si existen en `assets/`)
 
@@ -39,10 +42,20 @@ Todo debe vivir dentro de `ProjectD-HUD/`. Al instalar en otro PC, copia esta ca
 
 Sin overlay, solo se muestra el panel base.
 
+## Fuentes
+
+El HUD usa **Archivo SemiExpanded** (la misma fuente que CMRT Essential HUD), embebida en `fonts/`.
+
+- **Bold** ? nombres, ranks, titulo Top 10
+- **Medium** ? tiempos, coche, linea secundaria
+- **Regular** ? separadores y texto suave
+
+Si faltan los `.ttf`, hace fallback a Segoe UI del sistema.
+
 ## Avatares por URL
 
 Los mocks usan URLs de imagen; el HUD las descarga con `web.get` + `ui.decodeImage`.
-Hace falta conexión a internet la primera vez.
+Hace falta conexiï¿½n a internet la primera vez.
 
 ## Cambiar datos de prueba
 
@@ -52,7 +65,7 @@ Edita `common/mock_data.lua`:
 - `LEADERBOARDS` ? top 10 por clave `server@track@layout@car`
 - `PROFILES` ? perfil por Steam ID
 
-## Próximo paso (API)
+## Prï¿½ximo paso (API)
 
 Sustituir `mock_data.lua` por llamadas a ProjectD:
 

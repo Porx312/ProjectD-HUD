@@ -316,14 +316,14 @@ function draw.driver_row(origin, entry, opts)
         local tier_y = name_y + (name_fs - tier_sz) * 0.5
         draw.tier_badge(vec2(tier_x, tier_y), entry.tier, tier_sz)
 
-        ui.pushDWriteFont(theme.fonts.reg)
-        local time_w = measure_text(theme.fonts.reg, time_str, time_fs)
+        ui.pushDWriteFont(theme.fonts.medium)
+        local time_w = measure_text(theme.fonts.medium, time_str, time_fs)
         local time_x = tier_x - time_gap - time_w
         local time_y = name_y + (name_fs - time_fs) * 0.5
         ui.dwriteDrawText(time_str, time_fs, vec2(time_x, time_y), theme.colors.accent)
         ui.popDWriteFont()
 
-        ui.pushDWriteFont(theme.fonts.reg)
+        ui.pushDWriteFont(theme.fonts.medium)
         ui.dwriteDrawText(car, sub_fs, vec2(name_x, sub_y), theme.colors.white)
         ui.popDWriteFont()
     else
@@ -332,15 +332,15 @@ function draw.driver_row(origin, entry, opts)
         local tier_y = name_y + (name_fs - tier_sz) * 0.5
         draw.tier_badge(vec2(tier_x, tier_y), entry.tier, tier_sz)
 
-        ui.pushDWriteFont(theme.fonts.reg)
+        ui.pushDWriteFont(theme.fonts.medium)
         if show_rank_on_car then
             local car_prefix = "#" .. tostring(entry.rank) .. " " .. car
             ui.dwriteDrawText(car_prefix .. " - ", sub_fs, vec2(name_x, sub_y), theme.colors.white)
-            local prefix_w = measure_text(theme.fonts.reg, car_prefix .. " - ", sub_fs)
+            local prefix_w = measure_text(theme.fonts.medium, car_prefix .. " - ", sub_fs)
             ui.dwriteDrawText(time_str, sub_fs, vec2(name_x + prefix_w, sub_y), theme.colors.accent)
         else
             ui.dwriteDrawText(car .. " - ", sub_fs, vec2(name_x, sub_y), theme.colors.white)
-            local prefix_w = measure_text(theme.fonts.reg, car .. " - ", sub_fs)
+            local prefix_w = measure_text(theme.fonts.medium, car .. " - ", sub_fs)
             ui.dwriteDrawText(time_str, sub_fs, vec2(name_x + prefix_w, sub_y), theme.colors.accent)
         end
         ui.popDWriteFont()
@@ -352,7 +352,7 @@ local function profile_name_text(entry)
 end
 
 local function car_line_prefix(entry, opts)
-    local car = entry.car_name or "Car"
+    local car = theme.format_car_short(entry.car_name, entry.car_id)
     if opts.show_rank_on_car ~= false and entry.rank ~= nil then
         return "#" .. tostring(entry.rank) .. " " .. car
     end
@@ -388,7 +388,7 @@ local function measure_text_column(entry, opts, m)
     local time_str = theme.format_lap(entry.best_lap_ms or entry.lap_ms)
 
     local name_sz = measure_dwrite(theme.fonts.bold, name_text, m.name_fs)
-    local sub_sz = measure_dwrite(theme.fonts.reg, car_prefix .. " - " .. time_str, m.sub_fs)
+    local sub_sz = measure_dwrite(theme.fonts.medium, car_prefix .. " - " .. time_str, m.sub_fs)
     local name_row_w = name_sz.x + m.name_tier_gap + m.tier
     local text_w = math.max(name_row_w, sub_sz.x)
     local text_h = name_sz.y + m.line_gap + sub_sz.y
@@ -427,9 +427,9 @@ function draw.profile_card(panel_o, panel_size, entry, opts)
 
     local sub_y = text_y + name_sz.y + m.line_gap
 
-    ui.pushDWriteFont(theme.fonts.reg)
+    ui.pushDWriteFont(theme.fonts.medium)
     ui.dwriteDrawText(car_prefix .. " - ", m.sub_fs, vec2(tx, sub_y), theme.colors.white)
-    local pw = measure_text(theme.fonts.reg, car_prefix .. " - ", m.sub_fs)
+    local pw = measure_text(theme.fonts.medium, car_prefix .. " - ", m.sub_fs)
     ui.dwriteDrawText(time_str, m.sub_fs, vec2(tx + pw, sub_y), theme.colors.accent)
     ui.popDWriteFont()
 end

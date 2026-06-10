@@ -176,6 +176,7 @@ function mock.get_player_profile()
         tier = p.tier,
         best_lap_ms = p.best_lap_ms,
         car_name = ctx.car_name,
+        car_id = ctx.car_id,
         avatar_url = p.avatar_url,
         steam_id = ctx.player_steam_id,
     }
