@@ -189,8 +189,8 @@ function draw.car_filter_combo(origin, width, filters, selected_id)
     return nil
 end
 
---- Panel profile/rival: panel_card + overlay opcional (gradiente CMRT).
-function draw.cmrt_panel(win_origin, win_size)
+--- Panel profile/rival: panel_card + overlay opcional.
+function draw.card_panel(win_origin, win_size)
     local po, ps = layout.panel_fit(win_size)
     local origin = win_origin + po
     local br = origin + ps

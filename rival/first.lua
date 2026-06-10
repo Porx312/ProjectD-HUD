@@ -27,7 +27,7 @@ function mod.main(dt)
     theme.ensure_fonts()
     local win = ui.windowSize()
 
-    draw.cmrt_panel(vec2(0, 0), win)
+    draw.card_panel(vec2(0, 0), win)
 
     local rival = mock.get_rival()
     local profile = mock.get_player_profile()

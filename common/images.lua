@@ -114,12 +114,6 @@ function images.corners_all()
     return corners_all()
 end
 
-local function lua_sibling_asset(relative)
-    local lua_root = app_dir:match("^(.*)[/\\][^/\\]+[/\\]?$")
-    if lua_root == nil then return nil end
-    return lua_root .. relative
-end
-
 local function first_existing(paths)
     for _, path in ipairs(paths) do
         if path ~= nil and io.fileExists(path) then return path end
@@ -127,12 +121,11 @@ local function first_existing(paths)
     return nil
 end
 
---- Fondo de tarjeta: máscara blanca + tinte en draw (ver draw.cmrt_panel).
+--- Fondo de tarjeta profile/rival (assets locales).
 function images.get_card_panel()
     return first_existing({
         app_dir .. "/assets/panel_card.png",
         app_dir .. "/assets/tiers/panel_card.png",
-        lua_sibling_asset("CMRT-Essential-HUD/assets/GEARBOX.png"),
     })
 end
 
