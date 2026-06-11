@@ -1,9 +1,8 @@
---[[ Cached session bundle helpers + per-car-filter leaderboard cache. ]]
+﻿--[[ Cached session bundle + per-car leaderboard cache. ]]
 
 local config = require("common.config")
 local state = require("common.api.state")
 local profile = require("common.api.profile")
-local parse = require("common.api.parse")
 
 local bundle = {}
 
@@ -15,12 +14,6 @@ local function ensure_filter_bundles()
     if state.filter_bundles == nil then state.filter_bundles = {} end
 end
 
-function bundle.remember_filters(filters)
-    if filters ~= nil and type(filters) == "table" and #filters > 0 then
-        state.known_filters = filters
-    end
-end
-
 function bundle.store_filter_leaderboard(car_filter, leaderboard)
     if leaderboard == nil then return end
     ensure_filter_bundles()
@@ -30,81 +23,53 @@ function bundle.store_filter_leaderboard(car_filter, leaderboard)
     }
 end
 
-function bundle.get_cached_leaderboard(car_filter)
+function bundle.get_filter_leaderboard(car_filter)
     car_filter = car_filter or "global"
-    if state.cached_bundle ~= nil
-        and state.cached_filter == car_filter
-        and state.cached_bundle.leaderboard ~= nil then
+    ensure_filter_bundles()
+
+    local cached = state.filter_bundles[car_filter]
+    if cached ~= nil and cached.leaderboard ~= nil then
+        if (os.clock() - (cached.cached_at or 0)) <= filter_ttl() then
+            return cached.leaderboard
+        end
+        state.filter_bundles[car_filter] = nil
+    end
+
+    if car_filter == "global"
+        and state.cached_bundle ~= nil
+        and state.cached_bundle.leaderboard ~= nil
+        and (os.clock() - state.cached_at) <= filter_ttl() then
         return state.cached_bundle.leaderboard
     end
-    ensure_filter_bundles()
-    local cached = state.filter_bundles[car_filter]
-    if cached == nil or cached.leaderboard == nil then return nil end
-    if (os.clock() - (cached.cached_at or 0)) > filter_ttl() then
-        state.filter_bundles[car_filter] = nil
-        return nil
-    end
-    return cached.leaderboard
-end
 
-function bundle.switch_to_filter(car_filter)
-    car_filter = car_filter or "global"
-    local leaderboard = bundle.get_cached_leaderboard(car_filter)
-    if leaderboard == nil then return false end
-
-    local base = state.cached_bundle
-    if base == nil then
-        base = { ok = true, context = nil, profile = nil }
-    end
-
-    state.cached_bundle = {
-        ok = true,
-        context = base.context,
-        profile = base.profile,
-        leaderboard = leaderboard,
-    }
-    state.cached_filter = car_filter
-    local cached = state.filter_bundles[car_filter]
-    state.cached_at = cached and cached.cached_at or os.clock()
-    return true
-end
-
-function bundle.try_switch_filter(car_filter)
-    return bundle.switch_to_filter(car_filter)
+    return nil
 end
 
 function bundle.apply_bundle(data, car_filter)
     if data == nil or data.ok ~= true then return false end
 
     car_filter = car_filter or "global"
-    data.leaderboard = parse.coalesce_leaderboard(data)
-    local prev_profile = profile.coalesce_profile(state.cached_bundle and state.cached_bundle.profile)
-    if profile.coalesce_profile(data.profile) == nil and prev_profile ~= nil then
-        data.profile = prev_profile
-    end
-
     if data.leaderboard ~= nil then
         bundle.store_filter_leaderboard(car_filter, data.leaderboard)
-        bundle.remember_filters(data.leaderboard.filters)
     end
 
     state.cached_bundle = data
-    state.cached_filter = car_filter
+    state.cached_filter = "global"
     state.cached_at = os.clock()
     state.fetch_attempt = 0
     state.server_name_candidates = nil
     state.fetch_car_filter = nil
+    return true
+end
 
-    local ok_sync, sync = pcall(require, "common.api.sync")
-    if ok_sync and sync ~= nil and sync.publish_bundle ~= nil then
-        pcall(sync.publish_bundle, car_filter)
-    end
+function bundle.merge_top10(car_filter, raw, leaderboard)
+    if leaderboard == nil then return false end
+    bundle.store_filter_leaderboard(car_filter, leaderboard)
     return true
 end
 
 function bundle.clear_filter_cache()
     state.filter_bundles = {}
-    state.known_filters = nil
 end
 
 function bundle.bundle_needs_profile()

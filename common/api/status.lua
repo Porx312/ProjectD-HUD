@@ -18,9 +18,7 @@ local function profile_missing_message()
     end
     if state.last_error == "missing_steam" then return "Join online server (no Steam in race.ini)" end
     if state.last_error == "network_error" then return "Network error (profile)" end
-    if state.last_error == "server_not_found" then return "Server not found — set server name in CSP storage" end
-    if state.last_error == "track_not_found" then return "Track not found for this server" end
-    if state.last_error == "car_not_found" then return "Car filter not found" end
+    if state.last_error == "server_not_found" then return "Server not found" end
     if state.last_error == "profile_unavailable" then return "Profile unavailable" end
     if state.last_error ~= nil and string.sub(state.last_error, 1, 4) == "http" then
         return "Profile unavailable"
@@ -69,9 +67,6 @@ function status.get_status_message(kind)
         local n = st.ui_row_count or st.entry_count or 0
         if kind == "leaderboard" and n > 0 then return nil end
         if kind == "leaderboard" and n == 0 and not state.fetch_pending then
-            if state.cached_filter ~= nil and state.cached_filter ~= "global" then
-                return "No times for this car"
-            end
             return "No times on this track"
         end
         if kind == "profile" and bundled_profile ~= nil then return nil end
@@ -113,20 +108,11 @@ function status.get_status_message(kind)
     if state.last_error == "missing_track" then return "Waiting for track" end
     if state.last_error == "missing_steam_or_track" then return "Waiting for Steam / track" end
     if state.last_error == "web_unavailable" then return "CSP web.get unavailable" end
-    if state.last_error == "web_stuck" then return "HTTP blocked or timeout" end
     if state.last_error == "network_error" then return "Network error — check firewall/VPN" end
     if state.last_error == "profile_timeout" then return "Profile timeout — retrying" end
     if state.last_error == "session_timeout" then return "API timeout — check connection" end
     if state.last_error == "context_error" then return "AC context error" end
-    if state.last_error == "server_not_found" then
-        return "API: server not found (check url= / body= in debug)"
-    end
-    if state.last_error == "track_not_found" then return "Track not found" end
     if state.last_error ~= nil and string.sub(state.last_error, 1, 4) == "http" then
-        local hint = util.safe_str(state.last_api_reason)
-        if hint ~= "" and hint ~= state.last_error then
-            return hint .. " (HTTP " .. tostring(state.last_http_status or "?") .. ")"
-        end
         return "API " .. tostring(state.last_http_status or "?")
     end
     if state.last_error ~= nil then return tostring(state.last_error) end
@@ -169,27 +155,10 @@ function status.get_diag_lines()
         "track=" .. util.safe_str(ctx.track_id) .. "/" .. util.safe_str(ctx.layout_id),
         "full=" .. util.safe_str(ctx.track_full_id),
         "car=" .. util.safe_str(ctx.car_id),
-        "mode=api",
         "http=" .. tostring(st.http_status),
-        "transport=" .. util.safe_str(state.last_http_transport),
-        "api=" .. util.safe_str(state.last_api_reason),
-        "body=" .. util.safe_str(state.last_response_snip),
-        "api_base=" .. util.safe_str((function()
-            local override = state.api_base_storage:get()
-            if util.safe_str(override) ~= "" then return override end
-            local urls = require("common.config").API_BASE_URLS or {}
-            return urls[state.api_base_index or 1] or require("common.config").API_BASE_URL
-        end)()),
-        "try_srv=" .. util.safe_str(state.last_fetch_plan and state.last_fetch_plan.server_name),
-        "try_track=" .. util.safe_str(state.last_fetch_plan and state.last_fetch_plan.track_id)
-            .. "/" .. util.safe_str(state.last_fetch_plan and state.last_fetch_plan.layout_id),
-        "try=" .. tostring(state.fetch_attempt) .. "/" .. tostring(state.fetch_plans and #state.fetch_plans or 0),
         "err=" .. tostring(st.error),
         "state=" .. state.state_tag(),
-        "sync=" .. tostring(state.local_sync_ver or 0) .. "/" .. tostring(ac.storage("ProjectD-HUD:sync_ver", 0):get() or 0),
-        "lock=" .. tostring(ac.storage("ProjectD-HUD:g_fetch_lock", ""):get() or ""),
         "filter=" .. util.safe_str(state.cached_filter),
-        "filt_cache=" .. tostring(state.filter_bundles and util.count_table_entries(state.filter_bundles) or 0),
         "bundle=" .. tostring(st.has_bundle),
         "entries=" .. tostring(st.entry_count),
         "rows_ui=" .. tostring(st.ui_row_count),

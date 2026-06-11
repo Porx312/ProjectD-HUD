@@ -56,19 +56,6 @@ local function race_ini_paths()
     local docs = util.safe_call(function() return ac.getFolder(ac.FolderID.Documents) end)
     if util.safe_str(docs) ~= "" then
         add(docs .. "/Assetto Corsa/cfg/race.ini")
-        add(docs .. "/assettocorsa/cfg/race.ini")
-    end
-
-    -- Linux / Wine / Proton (Steam app id 244210)
-    local home = util.safe_str(os.getenv("HOME"))
-    if home ~= "" then
-        add(home .. "/.local/share/Steam/steamapps/compatdata/244210/pfx/drive_c/users/steamuser/Documents/Assetto Corsa/cfg/race.ini")
-        add(home .. "/.local/share/Steam/steamapps/compatdata/244210/pfx/drive_c/users/steamuser/My Documents/Assetto Corsa/cfg/race.ini")
-        local user = util.safe_str(os.getenv("USER"))
-        if user ~= "" then
-            add(home .. "/.wine/drive_c/users/" .. user .. "/Documents/Assetto Corsa/cfg/race.ini")
-            add(home .. "/.wine/drive_c/users/" .. user .. "/My Documents/Assetto Corsa/cfg/race.ini")
-        end
     end
 
     if race_ini_resolved_path ~= "" then
@@ -175,42 +162,27 @@ function steam.steam_from_race_ini()
     return ""
 end
 
-local function server_name_from_race_ini_raw(content, require_remote)
+function steam.server_name_from_race_ini()
+    local ini = get_race_ini()
+    if ini ~= nil and race_remote_active(ini) then
+        local name = util.normalize_server_name(ini:get("REMOTE", "SERVER_NAME", ""))
+        if name ~= "" then return name end
+    end
+
+    local content = read_race_ini_raw()
     if content == "" then return "" end
+
     local in_remote = false
     for line in content:gmatch("[^\r\n]+") do
         local section = line:match("^%[([^%]]+)%]")
         if section ~= nil then
             in_remote = section == "REMOTE"
-        elseif in_remote or not require_remote then
+        elseif in_remote then
             local server_name = line:match("^SERVER_NAME%s*=%s*(.+)$")
             if server_name ~= nil then
                 return util.normalize_server_name(server_name)
             end
         end
-    end
-    return ""
-end
-
-function steam.server_name_from_race_ini()
-    local content = read_race_ini_raw()
-    if content ~= "" then
-        local name = server_name_from_race_ini_raw(content, true)
-        if name ~= "" then return name end
-        name = server_name_from_race_ini_raw(content, false)
-        if name ~= "" then return name end
-    end
-
-    local ini = get_race_ini()
-    if ini ~= nil then
-        if race_remote_active(ini) then
-            local name = util.normalize_server_name(ini:get("REMOTE", "SERVER_NAME", ""))
-            if name ~= "" then return name end
-        end
-        local name = util.normalize_server_name(ini:get("REMOTE", "SERVER_NAME", ""))
-        if name ~= "" then return name end
-        name = util.normalize_server_name(ini:get("REMOTE", "NAME", ""))
-        if name ~= "" then return name end
     end
 
     return ""

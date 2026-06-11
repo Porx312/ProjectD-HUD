@@ -1,56 +1,30 @@
---[[ ProjectD — Top 10 del servidor (API live o mocks) ]]
+--[[ ProjectD — Top 10 del servidor ]]
 
 local theme = require("common.theme")
 local layout = require("common.layout")
 local data = require("common.data")
 local draw = require("common.draw")
 local images = require("common.images")
-local hud_debug = require("common.hud_debug")
 
 local mod = {}
 
 local selected_filter = "global"
-local filter_storage = ac.storage("ProjectD-HUD:top10_filter", "")
-local legacy_filter_storage = ac.storage("ProjectD-HUD:top5_filter", "global")
+local filter_storage = ac.storage("ProjectD-HUD:top10_filter", "global")
 local avatars_prefetched_for = ""
-
-local function read_stored_filter()
-    local v = filter_storage:get()
-    if v ~= nil and v ~= "" then return v end
-    return legacy_filter_storage:get() or "global"
-end
-
-local function store_filter(id)
-    filter_storage:set(id)
-    legacy_filter_storage:set(id)
-end
 
 local function normalize_filter(id)
     if id == nil or id == "" then return "global" end
     for _, tab in ipairs(data.get_leaderboard_filters()) do
         if tab.id == id then return id end
+        if tab.label == id then return tab.id end
     end
     return "global"
 end
 
-local function filter_has_rows(car_filter)
-    local rows = data.get_top10(car_filter)
-    return rows[0] ~= nil
-end
-
-local function pick_startup_filter()
-    local stored = normalize_filter(read_stored_filter())
-    if filter_has_rows(stored) then return stored end
-    if stored ~= "global" and filter_has_rows("global") then
-        return "global"
-    end
-    return stored
-end
-
 function mod.init()
     images.init()
-    selected_filter = pick_startup_filter()
-    store_filter(selected_filter)
+    selected_filter = "global"
+    filter_storage:set("global")
 end
 
 function mod.prefetch_avatars()
@@ -65,8 +39,8 @@ end
 
 function mod.on_session_start()
     avatars_prefetched_for = ""
-    selected_filter = pick_startup_filter()
-    store_filter(selected_filter)
+    selected_filter = "global"
+    filter_storage:set("global")
 end
 
 function mod.on_open() end
@@ -74,12 +48,10 @@ function mod.on_close() end
 function mod.update() end
 
 function mod.main(dt)
-    if data.run_tick ~= nil then pcall(data.run_tick, selected_filter)
-    elseif data.tick ~= nil then pcall(data.tick, selected_filter) end
     theme.ensure_fonts()
     local win = ui.windowSize()
     local filters = data.get_leaderboard_filters()
-    local side_pad = layout.TOP5_PAD
+    local side_pad = layout.TOP10_PAD
 
     local picked = draw.car_filter_combo(
         vec2(side_pad, 0),
@@ -90,23 +62,23 @@ function mod.main(dt)
 
     if picked ~= nil and picked ~= selected_filter then
         selected_filter = picked
-        store_filter(selected_filter)
+        filter_storage:set(selected_filter)
         avatars_prefetched_for = ""
         if data.select_filter ~= nil then
             data.select_filter(selected_filter)
         elseif data.fetch_session ~= nil then
-            data.fetch_session(selected_filter, false)
+            data.fetch_session(selected_filter, true)
         end
     end
 
-    local panel_origin = vec2(0, layout.TOP5_HEADER_H)
-    local panel_size = vec2(win.x, win.y - layout.TOP5_HEADER_H)
+    local panel_origin = vec2(0, layout.TOP10_HEADER_H)
+    local panel_size = vec2(win.x, win.y - layout.TOP10_HEADER_H)
     local po, ps = draw.leaderboard_panel(panel_origin, panel_size)
     local panel_o = panel_origin + po
 
     draw.leaderboard_header(panel_o, ps, data.get_leaderboard_header())
 
-    local content = layout.top5_content(ps)
+    local content = layout.top10_content(ps)
     local pad = content.pad
     local rows = data.get_top10(selected_filter)
     local row_count = content.row_count or layout.TOP10_ROW_COUNT
@@ -150,12 +122,11 @@ function mod.main(dt)
     if rows[0] == nil then
         ui.pushDWriteFont(theme.fonts.reg)
         local msg = "No data"
-        if data.get_status_message ~= nil then
+        if data.is_loading ~= nil and data.is_loading() then
+            msg = "Loading..."
+        elseif data.get_status_message ~= nil then
             local custom = data.get_status_message("leaderboard")
             if custom ~= nil then msg = custom end
-        end
-        if selected_filter ~= "global" and msg == "No times on this track" then
-            msg = "No times for this car"
         end
         ui.dwriteDrawText(
             msg, content.name_fs,
@@ -164,8 +135,6 @@ function mod.main(dt)
         )
         ui.popDWriteFont()
     end
-
-    hud_debug.draw(data, win, { max_lines = 16, font_size = 9 })
 end
 
 return mod

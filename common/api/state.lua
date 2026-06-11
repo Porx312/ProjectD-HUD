@@ -1,4 +1,4 @@
---[[ Shared mutable fetch/cache state — one instance for all HUD windows. ]]
+﻿--[[ Shared mutable fetch/cache state — one instance for all HUD windows. ]]
 
 local STATE_KEY = "__ProjectDHudSharedState_v1"
 
@@ -20,12 +20,6 @@ local function create_state()
         profile_fetch_attempt = 0,
         profile_candidates_exhausted = false,
         server_name_candidates = nil,
-        fetch_plans = nil,
-        last_fetch_plan = nil,
-        last_api_reason = "",
-        last_http_transport = "",
-        last_response_snip = "",
-        api_base_index = 1,
         profile_server_candidates = nil,
         last_resolved_server_name = nil,
         last_session_had_players = false,
@@ -35,25 +29,21 @@ local function create_state()
         last_fetch_kind = "",
         last_web_event = "",
         web_inflight = nil,
-        web_inflight_started_at = 0,
-        local_sync_ver = 0,
         web_queue = {},
         filter_bundles = {},
-        known_filters = nil,
         fetch_car_filter = nil,
         scheduled_filter_fetch = nil,
-        hud_version = "1.0.24",
+        filter_fetch_at = {},
+        hud_version = "1.0.19",
 
         CONTEXT_RETRY_SEC = 0.5,
-        TICK_INTERVAL_SEC = 0.15,
+        TICK_INTERVAL_SEC = 0.25,
         PROFILE_RETRY_SEC = 8,
         PROFILE_FETCH_TIMEOUT_SEC = 12,
         SESSION_FETCH_TIMEOUT_SEC = 15,
 
-        debug_storage = ac.storage("ProjectD-HUD:debug", true),
+        debug_storage = ac.storage("ProjectD-HUD:debug", false),
         steam_override_storage = ac.storage("ProjectD-HUD:steam_id", ""),
-        server_override_storage = ac.storage("ProjectD-HUD:server_name", ""),
-        api_base_storage = ac.storage("ProjectD-HUD:api_base", ""),
         steam_cache_storage = ac.storage("ProjectD-HUD:steam_cache", ""),
     }
 end

@@ -2,13 +2,20 @@
 
 local layout = {}
 
-layout.PAD_TOP5 = 4
-layout.TOP5_PAD = 2
-layout.TOP5_SELECT_H = 28
-layout.TOP5_SELECT_GAP = 4
-layout.TOP5_HEADER_H = layout.TOP5_SELECT_H + layout.TOP5_SELECT_GAP
+layout.PAD_TOP10 = 4
+layout.TOP10_PAD = 2
+layout.TOP10_SELECT_H = 28
+layout.TOP10_SELECT_GAP = 4
+layout.TOP10_HEADER_H = layout.TOP10_SELECT_H + layout.TOP10_SELECT_GAP
 layout.TOP10_ROW_COUNT = 10
-layout.TOP5_ROW_SCALE = 1.5
+layout.TOP10_ROW_SCALE = 1.5
+--- Legacy aliases
+layout.PAD_TOP5 = layout.PAD_TOP10
+layout.TOP5_PAD = layout.TOP10_PAD
+layout.TOP5_SELECT_H = layout.TOP10_SELECT_H
+layout.TOP5_SELECT_GAP = layout.TOP10_SELECT_GAP
+layout.TOP5_HEADER_H = layout.TOP10_HEADER_H
+layout.TOP5_ROW_SCALE = layout.TOP10_ROW_SCALE
 layout.ROW_H = 40
 layout.CARD_EDGE_PAD = 4
 layout.AVATAR_Y_EXTRA = 2
@@ -143,14 +150,14 @@ function layout.corners_all()
 end
 
 --- Métricas Top 10: cabecera + listado dentro del panel.
-function layout.top5_content(panel_size)
-    local pad = layout.TOP5_PAD
+function layout.top10_content(panel_size)
+    local pad = layout.TOP10_PAD
     local rows = layout.TOP10_ROW_COUNT
     local header = layout.leaderboard_header_metrics(panel_size)
     local list_top = header.header_h + pad
     local list_h = panel_size.y - list_top - pad
     local row_h = list_h / rows
-    local scale = layout.TOP5_ROW_SCALE
+    local scale = layout.TOP10_ROW_SCALE
     local rh = row_h / 46
 
     local name_fs = math.min(17, math.max(12, math.floor(15 * scale * rh)))
@@ -183,5 +190,7 @@ function layout.top5_content(panel_size)
         trailing_pad = trailing_pad,
     }
 end
+
+layout.top5_content = layout.top10_content
 
 return layout

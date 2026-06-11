@@ -4,8 +4,6 @@ local theme = require("common.theme")
 local data = require("common.data")
 local draw = require("common.draw")
 local images = require("common.images")
-local hud_debug = require("common.hud_debug")
-
 local mod = {}
 
 function mod.init()
@@ -25,8 +23,6 @@ function mod.on_close() end
 function mod.update() end
 
 function mod.main(dt)
-    if data.run_tick ~= nil then pcall(data.run_tick)
-    elseif data.tick ~= nil then pcall(data.tick) end
     theme.ensure_fonts()
     local win = ui.windowSize()
 
@@ -55,7 +51,6 @@ function mod.main(dt)
         draw.rival_block(vec2(0, 0), win, rival)
     end
 
-    hud_debug.draw(data, win, { max_lines = 10, font_size = 8 })
 end
 
 return mod
