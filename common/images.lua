@@ -96,7 +96,7 @@ function images.request_avatar(url)
     end
 
     if ok_wq and web_queue ~= nil and web_queue.get ~= nil then
-        web_queue.get(url, "avatar", on_avatar)
+        web_queue.get(url, "avatar", on_avatar, 2)
     elseif web ~= nil and web.get ~= nil then
         web.get(url, on_avatar)
     else

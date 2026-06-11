@@ -27,6 +27,14 @@ local function safe_main(mod, dt, label)
     end
 end
 
+local function ensure_data_ready()
+    pcall(function()
+        local data = require("common.data")
+        if data.init ~= nil then data.init() end
+        if data.hydrate ~= nil then data.hydrate() end
+    end)
+end
+
 local function session_start()
     pcall(function()
         local data = require("common.data")
@@ -55,18 +63,19 @@ function script.update(dt)
 
     pcall(function()
         local data = require("common.data")
-        if data.tick ~= nil then data.tick(filter_storage:get()) end
+        if data.run_tick ~= nil then data.run_tick(filter_storage:get())
+        elseif data.tick ~= nil then data.tick(filter_storage:get()) end
     end)
 end
 
 function top5Main(dt) safe_main(top5, dt, "top5") end
-function top5Show() top5.on_open() end
+function top5Show() ensure_data_ready(); top5.on_open() end
 function top5Hide() top5.on_close() end
 
 function profileMain(dt) safe_main(profile, dt, "profile") end
-function profileShow() profile.on_open() end
+function profileShow() ensure_data_ready(); profile.on_open() end
 function profileHide() profile.on_close() end
 
 function rivalMain(dt) safe_main(rival, dt, "rival") end
-function rivalShow() rival.on_open() end
+function rivalShow() ensure_data_ready(); rival.on_open() end
 function rivalHide() rival.on_close() end

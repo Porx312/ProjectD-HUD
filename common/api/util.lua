@@ -61,6 +61,23 @@ function util.response_body(response)
     return nil
 end
 
+function util.encode_json(data)
+    if data == nil then return nil end
+    if JSON ~= nil and JSON.stringify ~= nil then
+        local ok, text = pcall(JSON.stringify, data)
+        if ok and type(text) == "string" then return text end
+    end
+    if __util ~= nil and __util.jsonEncode ~= nil then
+        local ok, text = pcall(__util.jsonEncode, data)
+        if ok and type(text) == "string" then return text end
+    end
+    if __util ~= nil and __util.json ~= nil then
+        local ok, text = pcall(__util.json, data)
+        if ok and type(text) == "string" then return text end
+    end
+    return nil
+end
+
 function util.decode_json(body)
     if type(body) == "table" then return body end
     if body == nil then return nil end
@@ -83,7 +100,9 @@ function util.decode_json(body)
         if ok2 and type(data) == "table" then return data end
     end
 
-    state.last_error = "json_parse_failed"
+    if state ~= nil then
+        state.last_error = "json_parse_failed"
+    end
     return nil
 end
 

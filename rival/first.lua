@@ -25,6 +25,8 @@ function mod.on_close() end
 function mod.update() end
 
 function mod.main(dt)
+    if data.run_tick ~= nil then pcall(data.run_tick)
+    elseif data.tick ~= nil then pcall(data.tick) end
     theme.ensure_fonts()
     local win = ui.windowSize()
 

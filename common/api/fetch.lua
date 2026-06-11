@@ -9,8 +9,14 @@ local profile = require("common.api.profile")
 local parse = require("common.api.parse")
 local bundle = require("common.api.bundle")
 local web_queue = require("common.api.web_queue")
+local sync = require("common.api.sync")
 
 local fetch = {}
+
+local function finish_fetch_lock()
+    sync.release_fetch_lock()
+    sync.publish_meta()
+end
 
 local function safe_web_get(url, kind, callback)
     web_queue.get(url, kind, callback)
@@ -113,6 +119,7 @@ function fetch.start_profile_fetch(ctx, force_new_cycle, chain_next)
 
     safe_web_get(url, "profile", function(err, response)
         state.profile_fetch_pending = false
+        sync.publish_meta()
 
         local function try_next(reason)
             if state.profile_fetch_attempt < #candidates then
@@ -194,16 +201,45 @@ local function session_url(ctx, server_name, car_filter)
     )
 end
 
+local function run_scheduled_filter_fetch(ctx)
+    local next_filter = state.scheduled_filter_fetch
+    if next_filter == nil or next_filter == "" then return end
+    state.scheduled_filter_fetch = nil
+    if bundle.get_cached_leaderboard(next_filter) ~= nil then
+        bundle.try_switch_filter(next_filter)
+        return
+    end
+    if not state.fetch_pending then
+        fetch.start_fetch(ctx, next_filter, false)
+    end
+end
+
 function fetch.start_fetch(ctx, car_filter, force_new_cycle)
-    if state.fetch_pending then return end
+    car_filter = car_filter or "global"
+    if sync.is_fetch_locked() and not state.fetch_pending then
+        state.scheduled_filter_fetch = car_filter
+        return
+    end
+    if state.fetch_pending then
+        if car_filter ~= state.fetch_car_filter then
+            state.scheduled_filter_fetch = car_filter
+        end
+        return
+    end
+    if not sync.acquire_fetch_lock(car_filter) then
+        state.scheduled_filter_fetch = car_filter
+        return
+    end
 
     ctx.player_steam_id = steam.normalize_steam_id(ctx.player_steam_id)
     if util.safe_str(ctx.track_id) == "" then
         state.last_error = "missing_track"
+        finish_fetch_lock()
         return
     end
     if ctx.player_steam_id == "" then
         state.last_error = "missing_steam"
+        finish_fetch_lock()
         return
     end
 
@@ -214,6 +250,7 @@ function fetch.start_fetch(ctx, car_filter, force_new_cycle)
 
     if state.server_name_candidates == nil or #state.server_name_candidates == 0 then
         state.last_error = "missing_server_name"
+        finish_fetch_lock()
         return
     end
 
@@ -221,11 +258,13 @@ function fetch.start_fetch(ctx, car_filter, force_new_cycle)
     local server_name = state.server_name_candidates[state.fetch_attempt]
     if server_name == nil then
         state.fetch_attempt = 0
+        finish_fetch_lock()
         return
     end
 
     local url = session_url(ctx, server_name, car_filter)
     state.fetch_pending = true
+    state.fetch_car_filter = car_filter
     state.last_fetch_at = os.clock()
     state.session_fetch_started_at = os.clock()
     state.last_session_had_players = false
@@ -237,19 +276,25 @@ function fetch.start_fetch(ctx, car_filter, force_new_cycle)
         state.fetch_pending = false
         state.last_http_status = util.http_status_code(response) or (response and response.status) or nil
 
+        local function retry_or_finish()
+            if state.fetch_attempt < #state.server_name_candidates then
+                finish_fetch_lock()
+                fetch.start_fetch(ctx, car_filter, false)
+                return
+            end
+            finish_fetch_lock()
+            run_scheduled_filter_fetch(ctx)
+        end
+
         if util.is_web_error(err) then
             state.last_error = "network_error"
-            if state.fetch_attempt < #state.server_name_candidates then
-                fetch.start_fetch(ctx, car_filter, false)
-            end
+            retry_or_finish()
             return
         end
 
         if not util.http_response_ok(response) then
             state.last_error = "http_" .. tostring(util.http_status_code(response) or "nil")
-            if state.fetch_attempt < #state.server_name_candidates then
-                fetch.start_fetch(ctx, car_filter, false)
-            end
+            retry_or_finish()
             return
         end
 
@@ -258,29 +303,27 @@ function fetch.start_fetch(ctx, car_filter, force_new_cycle)
             raw = response
         end
         if raw == nil then
-            if state.fetch_attempt < #state.server_name_candidates then
-                fetch.start_fetch(ctx, car_filter, false)
-            end
+            retry_or_finish()
             return
         end
 
         local data = parse.normalize_session_response(raw, ctx.player_steam_id)
         if data == nil then
-            if state.fetch_attempt < #state.server_name_candidates then
-                fetch.start_fetch(ctx, car_filter, false)
-            end
+            retry_or_finish()
             return
         end
 
         state.last_resolved_server_name = server_name
         bundle.apply_bundle(data, car_filter)
         state.profile_candidates_exhausted = false
-        if bundle.bundle_needs_profile() then
-            fetch.start_profile_fetch(ctx, true, true)
+        finish_fetch_lock()
+        if bundle.bundle_needs_profile() and not state.profile_fetch_pending then
+            fetch.start_profile_fetch(ctx, false, false)
         else
             state.profile_server_candidates = nil
             state.profile_fetch_attempt = 0
         end
+        run_scheduled_filter_fetch(ctx)
     end)
 end
 
@@ -288,9 +331,13 @@ function fetch.fetch_session(car_filter, force)
     car_filter = car_filter or "global"
     local now = os.clock()
 
+    if not force and bundle.try_switch_filter(car_filter) then
+        return
+    end
+
     if not force and state.cached_bundle ~= nil and state.cached_filter == car_filter then
         if (now - state.cached_at) < config.CACHE_TTL_SEC then
-            if bundle.bundle_needs_profile() then
+            if bundle.bundle_needs_profile() and not state.profile_fetch_pending then
                 local ok_ctx, ctx = pcall(context.read_session_context)
                 if ok_ctx then fetch.start_profile_fetch(ctx, false, false) end
             end
@@ -332,8 +379,11 @@ function fetch.watchdog_session_fetch(ctx, car_filter)
     state.fetch_pending = false
     ac.debug("ProjectD-HUD session", "fetch timeout")
     state.last_error = "session_timeout"
+    finish_fetch_lock()
     if state.server_name_candidates ~= nil and state.fetch_attempt < #state.server_name_candidates then
         fetch.start_fetch(ctx, car_filter or state.cached_filter, false)
+    else
+        run_scheduled_filter_fetch(ctx)
     end
 end
 

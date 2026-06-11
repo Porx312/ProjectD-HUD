@@ -108,6 +108,7 @@ function status.get_status_message(kind)
     if state.last_error == "missing_track" then return "Waiting for track" end
     if state.last_error == "missing_steam_or_track" then return "Waiting for Steam / track" end
     if state.last_error == "web_unavailable" then return "CSP web.get unavailable" end
+    if state.last_error == "web_stuck" then return "HTTP blocked or timeout" end
     if state.last_error == "network_error" then return "Network error — check firewall/VPN" end
     if state.last_error == "profile_timeout" then return "Profile timeout — retrying" end
     if state.last_error == "session_timeout" then return "API timeout — check connection" end
@@ -158,7 +159,10 @@ function status.get_diag_lines()
         "http=" .. tostring(st.http_status),
         "err=" .. tostring(st.error),
         "state=" .. state.state_tag(),
+        "sync=" .. tostring(state.local_sync_ver or 0) .. "/" .. tostring(ac.storage("ProjectD-HUD:sync_ver", 0):get() or 0),
+        "lock=" .. tostring(ac.storage("ProjectD-HUD:g_fetch_lock", ""):get() or ""),
         "filter=" .. util.safe_str(state.cached_filter),
+        "filt_cache=" .. tostring(state.filter_bundles and util.count_table_entries(state.filter_bundles) or 0),
         "bundle=" .. tostring(st.has_bundle),
         "entries=" .. tostring(st.entry_count),
         "rows_ui=" .. tostring(st.ui_row_count),

@@ -45,6 +45,8 @@ function mod.on_close() end
 function mod.update() end
 
 function mod.main(dt)
+    if data.run_tick ~= nil then pcall(data.run_tick, selected_filter)
+    elseif data.tick ~= nil then pcall(data.tick, selected_filter) end
     theme.ensure_fonts()
     local win = ui.windowSize()
     local filters = data.get_leaderboard_filters()
@@ -60,8 +62,12 @@ function mod.main(dt)
     if picked ~= nil and picked ~= selected_filter then
         selected_filter = picked
         filter_storage:set(selected_filter)
-        if data.fetch_session ~= nil then data.fetch_session(selected_filter, true) end
-        mod.prefetch_avatars()
+        avatars_prefetched_for = ""
+        if data.select_filter ~= nil then
+            data.select_filter(selected_filter)
+        elseif data.fetch_session ~= nil then
+            data.fetch_session(selected_filter, false)
+        end
     end
 
     local panel_origin = vec2(0, layout.TOP5_HEADER_H)
