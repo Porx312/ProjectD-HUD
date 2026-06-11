@@ -45,7 +45,6 @@ function mod.on_close() end
 function mod.update() end
 
 function mod.main(dt)
-    if data.tick ~= nil then pcall(data.tick, selected_filter) end
     theme.ensure_fonts()
     local win = ui.windowSize()
     local filters = data.get_leaderboard_filters()

@@ -196,6 +196,7 @@ function api.reset_session_state()
     state.last_web_event = ""
     state.session_fetch_started_at = 0
     state.profile_fetch_started_at = 0
+    state.web_queue = {}
 end
 
 function api.on_session_start()

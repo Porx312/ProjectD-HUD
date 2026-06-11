@@ -1,6 +1,7 @@
 --[[ Session API response parsing and leaderboard entry copy. ]]
 
 local state = require("common.api.state")
+local util = require("common.api.util")
 local steam = require("common.api.steam")
 local profile = require("common.api.profile")
 
@@ -74,6 +75,10 @@ function parse.normalize_session_response(data, steam_id)
     end
 
     return out
+end
+
+function parse.count_ui_entries(list)
+    return util.count_ui_rows(parse.copy_entries(list))
 end
 
 function parse.copy_entries(list)

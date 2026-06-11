@@ -103,6 +103,29 @@ function util.normalize_server_name(name)
     return name
 end
 
+function util.count_table_entries(list)
+    if list == nil or type(list) ~= "table" then return 0 end
+    local count = 0
+    for _, entry in ipairs(list) do
+        if type(entry) == "table" then count = count + 1 end
+    end
+    if count > 0 then return count end
+    for _, entry in pairs(list) do
+        if type(entry) == "table" then count = count + 1 end
+    end
+    return count
+end
+
+function util.count_ui_rows(rows)
+    if rows == nil or type(rows) ~= "table" then return 0 end
+    local count = 0
+    for i = 0, 128 do
+        if rows[i] == nil then break end
+        count = count + 1
+    end
+    return count
+end
+
 function util.split_track_and_layout(track_id, layout_id)
     track_id = util.safe_str(track_id)
     layout_id = util.safe_str(layout_id)

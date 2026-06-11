@@ -8,48 +8,12 @@ local context = require("common.api.context")
 local profile = require("common.api.profile")
 local parse = require("common.api.parse")
 local bundle = require("common.api.bundle")
+local web_queue = require("common.api.web_queue")
 
 local fetch = {}
 
-local web_timeouts_set = false
-
-local function ensure_web_timeouts()
-    if web_timeouts_set then return end
-    web_timeouts_set = true
-    if web ~= nil and web.timeouts ~= nil then
-        pcall(web.timeouts, 3000, 8000, 12000, 15000)
-    end
-end
-
-local function log_web_event(kind, detail)
-    state.last_web_event = util.safe_str(detail)
-    ac.debug("ProjectD-HUD " .. kind, state.last_web_event)
-end
-
 local function safe_web_get(url, kind, callback)
-    ensure_web_timeouts()
-    state.last_fetch_url = url
-    state.last_fetch_kind = kind or ""
-    if web == nil or web.get == nil then
-        log_web_event(kind .. " fail", "web_unavailable")
-        callback("web_unavailable", nil)
-        return
-    end
-    log_web_event(kind .. " start", url)
-    local ok, err_call = pcall(web.get, url, function(a, b)
-        local err, response = util.normalize_web_response(a, b)
-        local code = util.http_status_code(response)
-        if util.is_web_error(err) then
-            log_web_event(kind .. " err", tostring(err))
-        else
-            log_web_event(kind .. " ok", "http=" .. tostring(code or "?"))
-        end
-        callback(err, response)
-    end)
-    if not ok then
-        log_web_event(kind .. " throw", tostring(err_call))
-        callback(tostring(err_call), nil)
-    end
+    web_queue.get(url, kind, callback)
 end
 
 local function profile_fetch_url(ctx, server_name)

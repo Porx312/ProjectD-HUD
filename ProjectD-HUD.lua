@@ -9,6 +9,7 @@ local rival = require("rival.first")
 local theme = require("common.theme")
 
 local init = false
+local filter_storage = ac.storage("ProjectD-HUD:top5_filter", "global")
 
 local function safe_main(mod, dt, label)
     local ok, err = pcall(mod.main, dt)
@@ -51,6 +52,11 @@ function script.update(dt)
         pcall(profile.init)
         pcall(rival.init)
     end
+
+    pcall(function()
+        local data = require("common.data")
+        if data.tick ~= nil then data.tick(filter_storage:get()) end
+    end)
 end
 
 function top5Main(dt) safe_main(top5, dt, "top5") end

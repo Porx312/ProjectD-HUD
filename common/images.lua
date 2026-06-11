@@ -12,7 +12,10 @@ local avatar_pending = {}    ---@type table<string, boolean>
 local function api_web_busy()
     local ok, st = pcall(require, "common.api.state")
     if not ok or st == nil then return false end
-    return st.fetch_pending or st.profile_fetch_pending
+    if st.fetch_pending or st.profile_fetch_pending then return true end
+    if st.web_inflight ~= nil then return true end
+    if st.web_queue ~= nil and #st.web_queue > 0 then return true end
+    return false
 end
 local tier_textures = {}     ---@type table<number, string?>
 
@@ -75,7 +78,8 @@ function images.request_avatar(url)
     end
     avatar_loading[url] = true
 
-    web.get(url, function(err, response)
+    local ok_wq, web_queue = pcall(require, "common.api.web_queue")
+    local function on_avatar(err, response)
         avatar_loading[url] = false
         if err ~= nil or response == nil or response.status ~= 200 then
             avatar_textures[url] = false
@@ -89,7 +93,16 @@ function images.request_avatar(url)
         else
             avatar_textures[url] = false
         end
-    end)
+    end
+
+    if ok_wq and web_queue ~= nil and web_queue.get ~= nil then
+        web_queue.get(url, "avatar", on_avatar)
+    elseif web ~= nil and web.get ~= nil then
+        web.get(url, on_avatar)
+    else
+        avatar_loading[url] = false
+        avatar_textures[url] = false
+    end
 end
 
 --- Flush one deferred avatar per frame after API requests (CSP max 2 web.get).

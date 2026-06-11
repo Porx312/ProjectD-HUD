@@ -6,6 +6,8 @@ local steam = require("common.api.steam")
 local context = require("common.api.context")
 local profile = require("common.api.profile")
 local bundle = require("common.api.bundle")
+local parse = require("common.api.parse")
+local web_queue = require("common.api.web_queue")
 
 local status = {}
 
@@ -40,8 +42,11 @@ function status.get_status()
         has_bundle = state.cached_bundle ~= nil,
         entry_count = state.cached_bundle
             and state.cached_bundle.leaderboard
-            and state.cached_bundle.leaderboard.entries
-            and #state.cached_bundle.leaderboard.entries
+            and util.count_table_entries(state.cached_bundle.leaderboard.entries)
+            or 0,
+        ui_row_count = state.cached_bundle
+            and state.cached_bundle.leaderboard
+            and parse.count_ui_entries(state.cached_bundle.leaderboard.entries)
             or 0,
         steam_id = util.safe_str(ctx.player_steam_id),
         server_name = util.safe_str(ctx.server_name),
@@ -54,17 +59,22 @@ end
 function status.get_status_message(kind)
     local st = status.get_status()
 
+    local bundled_profile = st.has_bundle
+        and profile.coalesce_profile(state.cached_bundle.profile)
+        or nil
+
     if st.has_bundle then
-        local n = st.entry_count or 0
+        local n = st.ui_row_count or st.entry_count or 0
         if kind == "leaderboard" and n > 0 then return nil end
         if kind == "leaderboard" and n == 0 and not state.fetch_pending then
             return "No times on this track"
         end
-        if kind == "profile" and profile.coalesce_profile(state.cached_bundle.profile) == nil then
+        if kind == "profile" and bundled_profile ~= nil then return nil end
+        if kind == "profile" and bundled_profile == nil then
             return profile_missing_message()
         end
         if kind == "rival" then
-            local p = profile.coalesce_profile(state.cached_bundle.profile)
+            local p = bundled_profile
             if p == nil then return profile_missing_message() end
             local rank = tonumber(p.rank) or 0
             if rank == 1 then return "You're #1 — no rival" end
@@ -74,8 +84,19 @@ function status.get_status_message(kind)
     end
 
     if kind == "leaderboard" then
+        if state.fetch_pending and (st.ui_row_count or 0) == 0 then return "Loading..." end
+    elseif kind == "profile" then
+        if bundled_profile ~= nil then return nil end
         if state.fetch_pending then return "Loading..." end
-    elseif kind == "profile" or kind == "rival" then
+        if state.profile_fetch_pending then return "Loading profile..." end
+    elseif kind == "rival" then
+        if bundled_profile ~= nil then
+            local rank = tonumber(bundled_profile.rank) or 0
+            if rank == 1 then return "You're #1 — no rival" end
+            if rank == 0 then return "No time yet — no rival" end
+            if bundled_profile.rival ~= nil then return nil end
+            return "No rival data"
+        end
         if state.fetch_pending then return "Loading..." end
         if state.profile_fetch_pending then return "Loading profile..." end
     elseif state.fetch_pending or state.profile_fetch_pending then
@@ -136,8 +157,11 @@ function status.get_diag_lines()
         "car=" .. util.safe_str(ctx.car_id),
         "http=" .. tostring(st.http_status),
         "err=" .. tostring(st.error),
+        "state=" .. state.state_tag(),
+        "filter=" .. util.safe_str(state.cached_filter),
         "bundle=" .. tostring(st.has_bundle),
         "entries=" .. tostring(st.entry_count),
+        "rows_ui=" .. tostring(st.ui_row_count),
         "profile=" .. tostring(profile.coalesce_profile(state.cached_bundle and state.cached_bundle.profile) ~= nil),
         "rank=" .. tostring(state.cached_bundle and state.cached_bundle.profile and state.cached_bundle.profile.rank or "?"),
         "rival=" .. tostring(state.cached_bundle ~= nil and state.cached_bundle.profile ~= nil and state.cached_bundle.profile.rival ~= nil),
@@ -150,6 +174,8 @@ function status.get_diag_lines()
         "fetch=" .. util.safe_str(state.last_fetch_kind),
         "url=" .. url,
         "web=" .. util.safe_str(state.last_web_event),
+        "web_q=" .. tostring(web_queue.queue_len()),
+        "web_now=" .. util.safe_str(state.web_inflight),
     }
 end
 
