@@ -109,6 +109,10 @@ function status.get_status_message(kind)
     if state.last_error == "missing_steam_or_track" then return "Waiting for Steam / track" end
     if state.last_error == "web_unavailable" then return "CSP web.get unavailable" end
     if state.last_error == "network_error" then return "Network error — check firewall/VPN" end
+    if state.last_error == "http_502" or state.last_error == "http_503" or state.last_error == "http_504" then
+        if st.has_bundle then return nil end
+        return "API gateway error — retrying"
+    end
     if state.last_error == "profile_timeout" then return "Profile timeout — retrying" end
     if state.last_error == "session_timeout" then return "API timeout — check connection" end
     if state.last_error == "context_error" then return "AC context error" end

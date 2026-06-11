@@ -119,7 +119,8 @@ function util.read_api_response(err, response)
             local reason = tostring(raw.reason)
             return raw, reason, reason == "server_not_found" or reason == "track_not_found"
         end
-        return raw, "http_" .. tostring(code), code == 404
+        local retry = code == 404 or code == 502 or code == 503 or code == 504
+        return raw, "http_" .. tostring(code), retry
     end
 
     if raw == nil and util.http_response_ok(response) then

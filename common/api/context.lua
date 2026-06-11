@@ -142,8 +142,8 @@ function context.build_server_name_candidates(ctx)
         out[#out + 1] = name
     end
     local function push_both(name)
-        push_raw(name)
         push_short(name)
+        push_raw(name)
     end
 
     local sim = util.safe_call(function() return ac.getSim() end)

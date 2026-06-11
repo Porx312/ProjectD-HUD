@@ -127,13 +127,17 @@ function fetch.start_profile_fetch(ctx, force_new_cycle, chain_next)
 
         local raw, err_reason, retry_server = util.read_api_response(err, response)
         if err_reason ~= nil then
-            if (retry_server or err_reason == "server_not_found" or err_reason == "track_not_found")
+            if (retry_server or should_retry_server(err_reason))
                 and state.profile_fetch_attempt < #candidates then
                 fetch.start_profile_fetch(ctx, false, true)
                 return
             end
             if err_reason == "user_not_found" or err_reason == "profile_unavailable" then
                 state.last_error = err_reason
+                state.profile_candidates_exhausted = true
+                return
+            end
+            if bundle.get_filter_leaderboard("global") ~= nil and string.sub(err_reason, 1, 4) == "http" then
                 state.profile_candidates_exhausted = true
                 return
             end
@@ -202,12 +206,19 @@ local function run_scheduled_filter_fetch(ctx)
     end
 end
 
+local function should_retry_server(err_reason)
+    if err_reason == nil then return false end
+    if err_reason == "server_not_found" or err_reason == "track_not_found" then return true end
+    if err_reason == "network_error" then return true end
+    if string.sub(err_reason, 1, 4) == "http" then
+        return err_reason == "http_404" or err_reason == "http_502"
+            or err_reason == "http_503" or err_reason == "http_504"
+    end
+    return false
+end
+
 function fetch.start_top10_fetch(ctx, car_filter, force_new_cycle)
     car_filter = car_filter or "global"
-    if car_filter == "global" then
-        fetch.start_fetch(ctx, "global", force_new_cycle)
-        return
-    end
     if state.fetch_pending then
         if car_filter ~= state.fetch_car_filter then
             state.scheduled_filter_fetch = car_filter
@@ -258,7 +269,7 @@ function fetch.start_top10_fetch(ctx, car_filter, force_new_cycle)
         state.last_http_status = util.http_status_code(response) or state.last_http_status
         local raw, err_reason, retry_server = util.read_api_response(err, response)
         if err_reason ~= nil then
-            if (retry_server or err_reason == "server_not_found" or err_reason == "track_not_found")
+            if (retry_server or should_retry_server(err_reason))
                 and state.fetch_attempt < #state.server_name_candidates then
                 fetch.start_top10_fetch(ctx, car_filter, false)
                 return
@@ -414,12 +425,7 @@ function fetch.fetch_session(car_filter, force)
     end
     state.last_attempt_at = now
 
-    if car_filter ~= "global" then
-        fetch.start_top10_fetch(ctx, car_filter, force == true)
-        return
-    end
-
-    fetch.start_fetch(ctx, "global", force == true)
+    fetch.start_top10_fetch(ctx, car_filter, force == true)
 end
 
 function fetch.watchdog_profile_fetch(ctx)
@@ -441,7 +447,7 @@ function fetch.watchdog_session_fetch(ctx, car_filter)
     ac.debug("ProjectD-HUD session", "fetch timeout")
     state.last_error = "session_timeout"
     if state.server_name_candidates ~= nil and state.fetch_attempt < #state.server_name_candidates then
-        fetch.start_fetch(ctx, car_filter or state.cached_filter, false)
+        fetch.start_top10_fetch(ctx, car_filter or state.cached_filter, false)
     end
 end
 

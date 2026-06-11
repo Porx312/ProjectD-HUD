@@ -65,7 +65,21 @@ end
 
 function bundle.merge_top10(car_filter, raw, leaderboard)
     if leaderboard == nil then return false end
+    car_filter = car_filter or "global"
     bundle.store_filter_leaderboard(car_filter, leaderboard)
+
+    if car_filter == "global" then
+        if state.cached_bundle == nil then
+            state.cached_bundle = { ok = true }
+        end
+        state.cached_bundle.ok = true
+        state.cached_bundle.leaderboard = leaderboard
+        state.cached_at = os.clock()
+        state.cached_filter = "global"
+        state.fetch_attempt = 0
+        state.server_name_candidates = nil
+        state.fetch_car_filter = nil
+    end
     return true
 end
 
