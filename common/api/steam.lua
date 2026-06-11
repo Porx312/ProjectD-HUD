@@ -48,14 +48,24 @@ local function race_ini_paths()
         paths[#paths + 1] = path
     end
 
+    local ac_root = util.safe_call(function() return ac.getFolder(ac.FolderID.ACRoot) end)
+    if util.safe_str(ac_root) ~= "" then
+        add(ac_root .. "/cfg/race.ini")
+    end
+
     local ac_docs = util.safe_call(function() return ac.getFolder(ac.FolderID.ACDocuments) end)
     if util.safe_str(ac_docs) ~= "" then
         add(ac_docs .. "/cfg/race.ini")
+        add(ac_docs .. "/Assetto Corsa/cfg/race.ini")
     end
 
     local docs = util.safe_call(function() return ac.getFolder(ac.FolderID.Documents) end)
     if util.safe_str(docs) ~= "" then
         add(docs .. "/Assetto Corsa/cfg/race.ini")
+        local onedrive = docs:match("(.*OneDrive[^/\\]*)")
+        if onedrive ~= nil then
+            add(onedrive .. "/Documents/Assetto Corsa/cfg/race.ini")
+        end
     end
 
     if race_ini_resolved_path ~= "" then
@@ -162,38 +172,82 @@ function steam.steam_from_race_ini()
     return ""
 end
 
-function steam.server_name_from_race_ini()
-    local ini = get_race_ini()
-    if ini ~= nil and race_remote_active(ini) then
-        local name = util.normalize_server_name(ini:get("REMOTE", "SERVER_NAME", ""))
-        if name ~= "" then return name end
-    end
-
-    local content = read_race_ini_raw()
-    if content == "" then return "" end
-
+local function server_fields_from_remote_content(content)
+    if content == "" then return "", "" end
+    local server_name, slug = "", ""
     local in_remote = false
     for line in content:gmatch("[^\r\n]+") do
         local section = line:match("^%[([^%]]+)%]")
         if section ~= nil then
             in_remote = section == "REMOTE"
         elseif in_remote then
-            local server_name = line:match("^SERVER_NAME%s*=%s*(.+)$")
-            if server_name ~= nil then
-                return util.normalize_server_name(server_name)
+            local sn = line:match("^SERVER_NAME%s*=%s*(.+)$")
+            if sn ~= nil and server_name == "" then
+                server_name = util.normalize_server_name(sn)
+            end
+            local nm = line:match("^NAME%s*=%s*(.+)$")
+            if nm ~= nil and slug == "" then
+                slug = util.normalize_server_name(nm)
             end
         end
     end
+    return server_name, slug
+end
 
+function steam.server_name_from_race_ini()
+    local content = read_race_ini_raw()
+    local from_raw, slug_raw = server_fields_from_remote_content(content)
+    if from_raw ~= "" then return from_raw end
+
+    local ini = get_race_ini()
+    if ini ~= nil then
+        local name = util.normalize_server_name(ini:get("REMOTE", "SERVER_NAME", ""))
+        if name ~= "" then return name end
+        name = util.normalize_server_name(ini:get("REMOTE", "NAME", ""))
+        if name ~= "" then return name end
+    end
+
+    if slug_raw ~= "" then return slug_raw end
     return ""
 end
 
 function steam.server_slug_from_race_ini()
+    local content = read_race_ini_raw()
+    local _, slug_raw = server_fields_from_remote_content(content)
+    if slug_raw ~= "" then return slug_raw end
+
     local ini = get_race_ini()
-    if ini ~= nil and race_remote_active(ini) then
-        return util.normalize_server_name(ini:get("REMOTE", "NAME", ""))
+    if ini ~= nil then
+        local name = util.normalize_server_name(ini:get("REMOTE", "NAME", ""))
+        if name ~= "" then return name end
+        name = util.normalize_server_name(ini:get("REMOTE", "SERVER_NAME", ""))
+        if name ~= "" then return name end
     end
     return ""
+end
+
+function steam.all_server_names_from_race_ini()
+    local names, seen = {}, {}
+    local function add(name)
+        name = util.normalize_server_name(name)
+        if name == "" then return end
+        local key = string.lower(name)
+        if seen[key] then return end
+        seen[key] = true
+        names[#names + 1] = name
+    end
+
+    local content = read_race_ini_raw()
+    local server_name, slug = server_fields_from_remote_content(content)
+    add(server_name)
+    add(slug)
+
+    local ini = get_race_ini()
+    if ini ~= nil then
+        add(ini:get("REMOTE", "SERVER_NAME", ""))
+        add(ini:get("REMOTE", "NAME", ""))
+    end
+    return names
 end
 
 function steam.steam_from_online_bridge()

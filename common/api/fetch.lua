@@ -236,6 +236,7 @@ function fetch.start_top10_fetch(ctx, car_filter, force_new_cycle)
         return
     end
 
+    state.last_server_tried = server_name
     local url = top10_url(ctx, server_name, car_filter)
     state.fetch_pending = true
     state.fetch_car_filter = car_filter
@@ -316,6 +317,7 @@ function fetch.start_fetch(ctx, car_filter, force_new_cycle)
         return
     end
 
+    state.last_server_tried = server_name
     local url = session_url(ctx, server_name, car_filter)
     state.fetch_pending = true
     state.fetch_car_filter = car_filter

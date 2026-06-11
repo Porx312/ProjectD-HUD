@@ -38,15 +38,26 @@ local function parse_track_full_id(full_id)
     return full_id, ""
 end
 
+local function sim_server_names(sim)
+    local names = {}
+    if sim == nil then return names end
+    local keys = { "serverName", "onlineServerName", "acOnlineServerName" }
+    for _, key in ipairs(keys) do
+        local name = util.normalize_server_name(util.safe_call(function() return sim[key] end))
+        if name ~= "" then names[#names + 1] = name end
+    end
+    return names
+end
+
 local function read_server_name(sim)
+    local override = util.normalize_server_name(state.server_override_storage:get())
+    if override ~= "" then return override end
+
     local name = steam.server_name_from_race_ini()
     if name ~= "" then return name end
 
-    if sim ~= nil then
-        name = util.normalize_server_name(util.safe_call(function() return sim.serverName end))
-        if name ~= "" then return name end
-        name = util.normalize_server_name(util.safe_call(function() return sim.onlineServerName end))
-        if name ~= "" then return name end
+    for _, sim_name in ipairs(sim_server_names(sim)) do
+        if sim_name ~= "" then return sim_name end
     end
 
     return steam.server_slug_from_race_ini()
@@ -99,20 +110,31 @@ function context.build_server_name_candidates(ctx)
         out[#out + 1] = name
     end
 
+    local override = util.normalize_server_name(state.server_override_storage:get())
+    if override ~= "" then push(override) end
+
     if state.last_resolved_server_name ~= nil and state.last_resolved_server_name ~= "" then
         push(state.last_resolved_server_name)
     end
+
+    for _, name in ipairs(steam.all_server_names_from_race_ini()) do push(name) end
     push(steam.server_name_from_race_ini())
+    push(steam.server_slug_from_race_ini())
+
+    local sim = util.safe_call(function() return ac.getSim() end)
+    for _, name in ipairs(sim_server_names(sim)) do push(name) end
     push(ctx.server_name)
 
     local full_name = util.safe_str(ctx.server_name)
     if full_name ~= "" then
         local prefix = full_name:match("^([^|]+)")
         if prefix ~= nil then push(prefix:gsub("%s+$", "")) end
+        local before_pipe = full_name:match("^([^|]+)|")
+        if before_pipe ~= nil then push(before_pipe:gsub("%s+$", "")) end
     end
 
-    push(steam.server_slug_from_race_ini())
     for _, slug in ipairs(config.SERVER_SLUG_FALLBACKS or {}) do push(slug) end
+    state.server_names_tried = out
     return out
 end
 

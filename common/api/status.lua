@@ -112,7 +112,13 @@ function status.get_status_message(kind)
     if state.last_error == "profile_timeout" then return "Profile timeout — retrying" end
     if state.last_error == "session_timeout" then return "API timeout — check connection" end
     if state.last_error == "context_error" then return "AC context error" end
-    if state.last_error == "server_not_found" then return "Server not found" end
+    if state.last_error == "server_not_found" then
+        local tried = util.safe_str(state.last_server_tried)
+        if tried ~= "" then
+            return 'Server not found ("' .. tried .. '")'
+        end
+        return "Server not found"
+    end
     if state.last_error == "track_not_found" then return "Track not found" end
     if state.last_error == "car_not_found" then return "Car not found" end
     if state.last_error ~= nil and string.sub(state.last_error, 1, 4) == "http" then
@@ -124,15 +130,37 @@ function status.get_status_message(kind)
     return "No data"
 end
 
+local function format_name_list(list, max_items)
+    if list == nil or type(list) ~= "table" or #list == 0 then return "" end
+    max_items = max_items or 4
+    local parts = {}
+    for i = 1, math.min(#list, max_items) do
+        parts[#parts + 1] = tostring(list[i])
+    end
+    local text = table.concat(parts, " | ")
+    if #list > max_items then text = text .. "..." end
+    if #text > 64 then text = string.sub(text, 1, 61) .. "..." end
+    return text
+end
+
 function status.get_diag_lines()
     local ok, ctx = pcall(context.read_session_context)
     if not ok then ctx = {} end
     local st = status.get_status()
     local race = steam.get_race_ini_status()
     local url = util.safe_str(state.last_fetch_url)
-    if #url > 72 then
-        url = string.sub(url, 1, 69) .. "..."
+    if #url > 96 then
+        url = string.sub(url, 1, 93) .. "..."
     end
+    local candidates = state.server_names_tried
+    if (candidates == nil or #candidates == 0) and state.server_name_candidates ~= nil then
+        candidates = state.server_name_candidates
+    end
+    if candidates == nil or #candidates == 0 then
+        local ok_list, fresh = pcall(context.build_server_name_candidates, ctx)
+        if ok_list and fresh ~= nil then candidates = fresh end
+    end
+    local try_total = candidates ~= nil and #candidates or 0
     local sess_age = ""
     if state.fetch_pending and (state.session_fetch_started_at or 0) > 0 then
         sess_age = string.format("%.1fs", os.clock() - state.session_fetch_started_at)
@@ -152,6 +180,10 @@ function status.get_diag_lines()
         "race_remote=" .. tostring(race.remote_active),
         "race_guid=" .. tostring(race.has_guid),
         "server=" .. util.safe_str(ctx.server_name),
+        "tried=" .. util.safe_str(state.last_server_tried),
+        "names=" .. format_name_list(candidates, 5),
+        "try=" .. tostring(state.fetch_attempt) .. "/" .. tostring(try_total),
+        "override=" .. util.safe_str(state.server_override_storage:get()),
         "race_server=" .. steam.server_name_from_race_ini(),
         "race_slug=" .. steam.server_slug_from_race_ini(),
         "race.ini=" .. steam.steam_from_race_ini(),

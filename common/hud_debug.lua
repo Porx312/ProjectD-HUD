@@ -6,8 +6,8 @@ local hud_debug = {}
 
 function hud_debug.should_show(data)
     if data == nil then return true end
-    if data.should_show_diag ~= nil and data.should_show_diag() then return true end
     if data.is_debug ~= nil and data.is_debug() then return true end
+    if data.should_show_diag ~= nil and data.should_show_diag() then return true end
     if data.is_loading ~= nil and data.is_loading() then return true end
     if data.get_status ~= nil then
         local st = data.get_status()

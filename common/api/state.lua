@@ -34,7 +34,7 @@ local function create_state()
         fetch_car_filter = nil,
         scheduled_filter_fetch = nil,
         filter_fetch_at = {},
-        hud_version = "1.0.20",
+        hud_version = "1.0.22",
 
         CONTEXT_RETRY_SEC = 0.5,
         TICK_INTERVAL_SEC = 0.25,
@@ -42,9 +42,12 @@ local function create_state()
         PROFILE_FETCH_TIMEOUT_SEC = 12,
         SESSION_FETCH_TIMEOUT_SEC = 15,
 
-        debug_storage = ac.storage("ProjectD-HUD:debug", false),
+        debug_storage = ac.storage("ProjectD-HUD:debug", true),
         steam_override_storage = ac.storage("ProjectD-HUD:steam_id", ""),
         steam_cache_storage = ac.storage("ProjectD-HUD:steam_cache", ""),
+        server_override_storage = ac.storage("ProjectD-HUD:server_name", ""),
+        last_server_tried = "",
+        server_names_tried = nil,
     }
 end
 
