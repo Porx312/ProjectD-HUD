@@ -27,6 +27,10 @@ local function safe_main(mod, dt, label)
 end
 
 local function session_start()
+    pcall(function()
+        local data = require("common.data")
+        if data.on_session_start ~= nil then data.on_session_start() end
+    end)
     top5.on_session_start()
     profile.on_session_start()
     rival.on_session_start()
@@ -39,6 +43,10 @@ function script.update(dt)
     if init == false then
         init = true
         ac.onSessionStart(session_start)
+        pcall(function()
+            local data = require("common.data")
+            if data.init ~= nil then data.init() end
+        end)
         pcall(top5.init)
         pcall(profile.init)
         pcall(rival.init)

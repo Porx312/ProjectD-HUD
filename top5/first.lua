@@ -5,11 +5,13 @@ local layout = require("common.layout")
 local data = require("common.data")
 local draw = require("common.draw")
 local images = require("common.images")
+local hud_debug = require("common.hud_debug")
 
 local mod = {}
 
 local selected_filter = "global"
 local filter_storage = ac.storage("ProjectD-HUD:top5_filter", "global")
+local avatars_prefetched_for = ""
 
 local function normalize_filter(id)
     if id == nil or id == "" then return "global" end
@@ -22,8 +24,6 @@ end
 function mod.init()
     images.init()
     selected_filter = normalize_filter(filter_storage:get())
-    if data.init ~= nil then data.init() end
-    mod.prefetch_avatars()
 end
 
 function mod.prefetch_avatars()
@@ -37,7 +37,7 @@ function mod.prefetch_avatars()
 end
 
 function mod.on_session_start()
-    mod.prefetch_avatars()
+    avatars_prefetched_for = ""
 end
 
 function mod.on_open() end
@@ -78,6 +78,12 @@ function mod.main(dt)
     local row_count = content.row_count or layout.TOP10_ROW_COUNT
 
     local y = panel_o.y + content.list_top
+    local prefetch_key = selected_filter .. ":" .. tostring(rows[0] ~= nil)
+    if rows[0] ~= nil and avatars_prefetched_for ~= prefetch_key then
+        avatars_prefetched_for = prefetch_key
+        mod.prefetch_avatars()
+    end
+
     for i = 0, row_count - 1 do
         local entry = rows[i]
         if entry == nil then break end
@@ -119,30 +125,10 @@ function mod.main(dt)
             vec2(panel_o.x + pad + 2, panel_o.y + content.list_top + 2),
             theme.colors.muted
         )
-        if data.get_status ~= nil then
-            local st = data.get_status()
-            local hint = string.format(
-                "srv=%s | steam=%s | http=%s err=%s",
-                tostring(st.server_name ~= "" and st.server_name or "?"),
-                tostring(st.steam_id ~= "" and st.steam_id or "?"),
-                tostring(st.http_status),
-                tostring(st.error)
-            )
-            ui.dwriteDrawText(hint, 10, vec2(panel_o.x + pad + 2, panel_o.y + content.list_top + 22), theme.colors.muted)
-        end
         ui.popDWriteFont()
     end
 
-    if data.get_debug_lines ~= nil and data.is_debug ~= nil and data.is_debug() then
-        ui.pushDWriteFont(theme.fonts.reg)
-        local lines = data.get_debug_lines()
-        local dy = win.y - 10
-        for i = #lines, 1, -1 do
-            dy = dy - 11
-            ui.dwriteDrawText(lines[i], 10, vec2(4, dy), theme.colors.muted)
-        end
-        ui.popDWriteFont()
-    end
+    hud_debug.draw(data, win, { max_lines = 16, font_size = 9 })
 end
 
 return mod

@@ -4,12 +4,12 @@ local theme = require("common.theme")
 local data = require("common.data")
 local draw = require("common.draw")
 local images = require("common.images")
+local hud_debug = require("common.hud_debug")
 
 local mod = {}
 
 function mod.init()
     images.init()
-    if data.init ~= nil then data.init() end
     local r = data.get_rival()
     if r ~= nil then
         images.request_avatar(images.resolve_url(r.name, r.avatar_url))
@@ -48,12 +48,13 @@ function mod.main(dt)
         end
         ui.pushDWriteFont(theme.fonts.reg)
         local tw = ui.measureDWriteText(msg, 13).x
-        ui.dwriteDrawText(msg, 13, vec2((win.x - tw) * 0.5, (win.y - 13) * 0.5), theme.colors.muted)
+        ui.dwriteDrawText(msg, 13, vec2((win.x - tw) * 0.5, math.max(8, (win.y - 13) * 0.35)), theme.colors.muted)
         ui.popDWriteFont()
-        return
+    else
+        draw.rival_block(vec2(0, 0), win, rival)
     end
 
-    draw.rival_block(vec2(0, 0), win, rival)
+    hud_debug.draw(data, win, { max_lines = 10, font_size = 8 })
 end
 
 return mod

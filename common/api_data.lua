@@ -16,8 +16,17 @@ function api.fetch_session(car_filter, force)
 end
 
 function api.tick(car_filter)
+    local now = os.clock()
+    if (now - (state.last_tick_at or -1)) < state.TICK_INTERVAL_SEC then return end
+    state.last_tick_at = now
+    state.tick_count = (state.tick_count or 0) + 1
+
+    car_filter = car_filter or state.cached_filter
     local ok_ctx, ctx = pcall(context.read_session_context)
-    if ok_ctx then fetch.watchdog_profile_fetch(ctx) end
+    if ok_ctx then
+        fetch.watchdog_session_fetch(ctx, car_filter)
+        fetch.watchdog_profile_fetch(ctx)
+    end
 
     local ok, err = pcall(api.fetch_session, car_filter or state.cached_filter, false)
     if not ok then
@@ -29,6 +38,11 @@ function api.tick(car_filter)
         if bundle.bundle_needs_profile() and not state.profile_fetch_pending then
             pcall(fetch.start_profile_fetch, ctx, false, false)
         end
+    end
+
+    local ok_img, images = pcall(require, "common.images")
+    if ok_img and images.tick ~= nil then
+        pcall(images.tick)
     end
 end
 
@@ -50,6 +64,18 @@ end
 
 function api.get_debug_lines()
     return status.get_debug_lines()
+end
+
+function api.get_diag_lines()
+    return status.get_diag_lines()
+end
+
+function api.should_show_diag()
+    if state.is_debug() then return true end
+    if state.fetch_pending or state.profile_fetch_pending then return true end
+    if state.cached_bundle == nil then return true end
+    if state.last_error ~= nil and state.last_error ~= "" then return true end
+    return false
 end
 
 function api.get_context()
@@ -151,7 +177,36 @@ function api.get_rival()
     }
 end
 
+function api.reset_session_state()
+    state.cached_at = 0
+    state.cached_bundle = nil
+    state.fetch_pending = false
+    state.profile_fetch_pending = false
+    state.last_error = nil
+    state.last_http_status = nil
+    state.fetch_attempt = 0
+    state.profile_fetch_attempt = 0
+    state.profile_candidates_exhausted = false
+    state.server_name_candidates = nil
+    state.profile_server_candidates = nil
+    state.last_resolved_server_name = nil
+    state.last_session_had_players = false
+    state.last_fetch_url = ""
+    state.last_fetch_kind = ""
+    state.last_web_event = ""
+    state.session_fetch_started_at = 0
+    state.profile_fetch_started_at = 0
+end
+
+function api.on_session_start()
+    api.reset_session_state()
+    api.fetch_session(state.cached_filter or "global", true)
+end
+
 function api.init()
+    if web ~= nil and web.timeouts ~= nil then
+        pcall(web.timeouts, 3000, 8000, 12000, 15000)
+    end
     api.fetch_session("global", true)
 end
 

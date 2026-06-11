@@ -25,6 +25,20 @@ function util.is_web_error(err)
     return true
 end
 
+--- CSP allows only 2 concurrent web.get; normalize callback args defensively.
+function util.normalize_web_response(err, response)
+    if type(err) == "table" and response == nil then
+        return nil, err
+    end
+    if type(response) == "string" and err == nil then
+        return nil, { status = 200, body = response }
+    end
+    if type(err) == "string" and not util.is_web_error(err) and response == nil then
+        return nil, { status = 200, body = err }
+    end
+    return err, response
+end
+
 function util.http_status_code(response)
     if response == nil or type(response) ~= "table" then return nil end
     return tonumber(response.status)

@@ -35,10 +35,48 @@ function steam.steam_ids_equal(a, b)
     return na ~= "" and nb ~= "" and na == nb
 end
 
-local function race_ini_path()
+local race_ini_resolved_path = ""
+
+local function race_ini_paths()
+    local paths, seen = {}, {}
+    local function add(path)
+        path = util.safe_str(path)
+        if path == "" then return end
+        local key = string.lower(path)
+        if seen[key] then return end
+        seen[key] = true
+        paths[#paths + 1] = path
+    end
+
+    local ac_docs = util.safe_call(function() return ac.getFolder(ac.FolderID.ACDocuments) end)
+    if util.safe_str(ac_docs) ~= "" then
+        add(ac_docs .. "/cfg/race.ini")
+    end
+
     local docs = util.safe_call(function() return ac.getFolder(ac.FolderID.Documents) end)
-    if util.safe_str(docs) == "" then return "" end
-    return docs .. "/Assetto Corsa/cfg/race.ini"
+    if util.safe_str(docs) ~= "" then
+        add(docs .. "/Assetto Corsa/cfg/race.ini")
+    end
+
+    if race_ini_resolved_path ~= "" then
+        add(race_ini_resolved_path)
+    end
+
+    return paths
+end
+
+local function read_file(path)
+    local ok, content = pcall(function()
+        local file = io.open(path, "r")
+        if file == nil then return nil end
+        local data = file:read("*a")
+        file:close()
+        return data
+    end)
+    if ok and type(content) == "string" and content ~= "" then
+        return content
+    end
+    return ""
 end
 
 local function get_race_ini()
@@ -49,14 +87,15 @@ local function get_race_ini()
     race_ini_cache.ini = nil
     race_ini_cache.at = now
 
-    local path = race_ini_path()
-    if path == "" then return nil end
     if ac.INIConfig == nil or ac.INIConfig.load == nil or ac.INIFormat == nil then return nil end
 
-    local ok, ini = pcall(ac.INIConfig.load, path, ac.INIFormat.Extended)
-    if ok and ini ~= nil then
-        race_ini_cache.ini = ini
-        return ini
+    for _, path in ipairs(race_ini_paths()) do
+        local ok, ini = pcall(ac.INIConfig.load, path, ac.INIFormat.Extended)
+        if ok and ini ~= nil then
+            race_ini_resolved_path = path
+            race_ini_cache.ini = ini
+            return ini
+        end
     end
     return nil
 end
@@ -67,16 +106,13 @@ local function race_remote_active(ini)
 end
 
 local function read_race_ini_raw()
-    local path = race_ini_path()
-    if path == "" then return "" end
-    local ok, content = pcall(function()
-        local file = io.open(path, "r")
-        if file == nil then return nil end
-        local data = file:read("*a")
-        file:close()
-        return data
-    end)
-    if ok and type(content) == "string" then return content end
+    for _, path in ipairs(race_ini_paths()) do
+        local content = read_file(path)
+        if content ~= "" then
+            race_ini_resolved_path = path
+            return content
+        end
+    end
     return ""
 end
 
@@ -163,6 +199,27 @@ end
 function steam.steam_from_online_bridge()
     local value = util.safe_call(function() return ac.load(STEAM_BRIDGE_KEY) end)
     return steam.normalize_steam_id(value)
+end
+
+--- Debug: whether race.ini was found and if [REMOTE] is active.
+function steam.get_race_ini_status()
+    local content = read_race_ini_raw()
+    local ini = get_race_ini()
+    local remote = race_remote_active(ini)
+    local guid = ""
+    if content ~= "" then
+        guid = steam_from_race_ini_raw(content, false)
+    end
+    if guid == "" and ini ~= nil then
+        guid = steam.normalize_steam_id(ini:get("REMOTE", "GUID", ""))
+    end
+    return {
+        path = race_ini_resolved_path,
+        found = content ~= "" or ini ~= nil,
+        remote_active = remote,
+        has_guid = guid ~= "",
+        guid = guid,
+    }
 end
 
 local function remember_steam_id(id)

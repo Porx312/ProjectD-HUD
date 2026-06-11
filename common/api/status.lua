@@ -14,7 +14,7 @@ local function profile_missing_message()
     if state.last_error == "user_not_found" then
         return "Link Steam in ProjectD"
     end
-    if state.last_error == "missing_steam" then return "Waiting for Steam ID" end
+    if state.last_error == "missing_steam" then return "Join online server (no Steam in race.ini)" end
     if state.last_error == "network_error" then return "Network error (profile)" end
     if state.last_error == "server_not_found" then return "Server not found" end
     if state.last_error == "profile_unavailable" then return "Profile unavailable" end
@@ -34,6 +34,7 @@ function status.get_status()
     if not ok then ctx = {} end
     return {
         loading = state.fetch_pending,
+        profile_loading = state.profile_fetch_pending,
         error = state.last_error,
         http_status = state.last_http_status,
         has_bundle = state.cached_bundle ~= nil,
@@ -52,11 +53,13 @@ end
 
 function status.get_status_message(kind)
     local st = status.get_status()
-    if st.loading then return "Loading..." end
+
     if st.has_bundle then
         local n = st.entry_count or 0
         if kind == "leaderboard" and n > 0 then return nil end
-        if kind == "leaderboard" and n == 0 then return "No times on this track" end
+        if kind == "leaderboard" and n == 0 and not state.fetch_pending then
+            return "No times on this track"
+        end
         if kind == "profile" and profile.coalesce_profile(state.cached_bundle.profile) == nil then
             return profile_missing_message()
         end
@@ -69,12 +72,24 @@ function status.get_status_message(kind)
             if p.rival == nil then return "No rival data" end
         end
     end
+
+    if kind == "leaderboard" then
+        if state.fetch_pending then return "Loading..." end
+    elseif kind == "profile" or kind == "rival" then
+        if state.fetch_pending then return "Loading..." end
+        if state.profile_fetch_pending then return "Loading profile..." end
+    elseif state.fetch_pending or state.profile_fetch_pending then
+        return "Loading..."
+    end
     if state.last_error == "json_parse_failed" then return "JSON parse error" end
     if state.last_error == "missing_server_name" then return "No server name" end
-    if state.last_error == "missing_steam" then return "Waiting for Steam ID" end
+    if state.last_error == "missing_steam" then return "Join online server (no Steam in race.ini)" end
     if state.last_error == "missing_track" then return "Waiting for track" end
     if state.last_error == "missing_steam_or_track" then return "Waiting for Steam / track" end
-    if state.last_error == "network_error" then return "Network error" end
+    if state.last_error == "web_unavailable" then return "CSP web.get unavailable" end
+    if state.last_error == "network_error" then return "Network error — check firewall/VPN" end
+    if state.last_error == "profile_timeout" then return "Profile timeout — retrying" end
+    if state.last_error == "session_timeout" then return "API timeout — check connection" end
     if state.last_error == "context_error" then return "AC context error" end
     if state.last_error ~= nil and string.sub(state.last_error, 1, 4) == "http" then
         return "API " .. tostring(state.last_http_status or "?")
@@ -84,13 +99,33 @@ function status.get_status_message(kind)
     return "No data"
 end
 
-function status.get_debug_lines()
-    if not state.is_debug() then return {} end
+function status.get_diag_lines()
     local ok, ctx = pcall(context.read_session_context)
     if not ok then ctx = {} end
     local st = status.get_status()
+    local race = steam.get_race_ini_status()
+    local url = util.safe_str(state.last_fetch_url)
+    if #url > 72 then
+        url = string.sub(url, 1, 69) .. "..."
+    end
+    local sess_age = ""
+    if state.fetch_pending and (state.session_fetch_started_at or 0) > 0 then
+        sess_age = string.format("%.1fs", os.clock() - state.session_fetch_started_at)
+    end
+    local prof_age = ""
+    if state.profile_fetch_pending and (state.profile_fetch_started_at or 0) > 0 then
+        prof_age = string.format("%.1fs", os.clock() - state.profile_fetch_started_at)
+    end
     return {
+        "ver=" .. util.safe_str(state.hud_version),
+        "tick=" .. tostring(state.tick_count),
+        "ctx_ready=" .. tostring(st.context_ready),
+        "sess_age=" .. sess_age,
+        "prof_age=" .. prof_age,
         "steam=" .. util.safe_str(ctx.player_steam_id),
+        "race_path=" .. util.safe_str(race.path ~= "" and race.path or "not found"),
+        "race_remote=" .. tostring(race.remote_active),
+        "race_guid=" .. tostring(race.has_guid),
         "server=" .. util.safe_str(ctx.server_name),
         "race_server=" .. steam.server_name_from_race_ini(),
         "race_slug=" .. steam.server_slug_from_race_ini(),
@@ -107,11 +142,20 @@ function status.get_debug_lines()
         "rank=" .. tostring(state.cached_bundle and state.cached_bundle.profile and state.cached_bundle.profile.rank or "?"),
         "rival=" .. tostring(state.cached_bundle ~= nil and state.cached_bundle.profile ~= nil and state.cached_bundle.profile.rival ~= nil),
         "srv=" .. util.safe_str(state.last_resolved_server_name),
+        "sess_load=" .. tostring(state.fetch_pending),
         "prof_load=" .. tostring(state.profile_fetch_pending),
         "prof_done=" .. tostring(state.profile_candidates_exhausted),
         "prof_try=" .. tostring(state.profile_fetch_attempt),
         "players=" .. tostring(state.last_session_had_players),
+        "fetch=" .. util.safe_str(state.last_fetch_kind),
+        "url=" .. url,
+        "web=" .. util.safe_str(state.last_web_event),
     }
+end
+
+function status.get_debug_lines()
+    if not state.is_debug() then return {} end
+    return status.get_diag_lines()
 end
 
 return status

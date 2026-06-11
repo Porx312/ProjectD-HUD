@@ -7,6 +7,13 @@ local images = {}
 
 local avatar_textures = {}   ---@type table<string, ui.ImageSource|string|false|nil>
 local avatar_loading = {}    ---@type table<string, boolean>
+local avatar_pending = {}    ---@type table<string, boolean>
+
+local function api_web_busy()
+    local ok, st = pcall(require, "common.api.state")
+    if not ok or st == nil then return false end
+    return st.fetch_pending or st.profile_fetch_pending
+end
 local tier_textures = {}     ---@type table<number, string?>
 
 local app_dir = ac.dirname()
@@ -62,6 +69,10 @@ end
 function images.request_avatar(url)
     if url == nil or url == "" then return end
     if avatar_textures[url] ~= nil or avatar_loading[url] then return end
+    if api_web_busy() then
+        avatar_pending[url] = true
+        return
+    end
     avatar_loading[url] = true
 
     web.get(url, function(err, response)
@@ -79,6 +90,16 @@ function images.request_avatar(url)
             avatar_textures[url] = false
         end
     end)
+end
+
+--- Flush one deferred avatar per frame after API requests (CSP max 2 web.get).
+function images.tick()
+    if api_web_busy() then return end
+    for pending_url, _ in pairs(avatar_pending) do
+        avatar_pending[pending_url] = nil
+        images.request_avatar(pending_url)
+        return
+    end
 end
 
 function images.get_avatar(url)

@@ -11,6 +11,47 @@ local bundle = require("common.api.bundle")
 
 local fetch = {}
 
+local web_timeouts_set = false
+
+local function ensure_web_timeouts()
+    if web_timeouts_set then return end
+    web_timeouts_set = true
+    if web ~= nil and web.timeouts ~= nil then
+        pcall(web.timeouts, 3000, 8000, 12000, 15000)
+    end
+end
+
+local function log_web_event(kind, detail)
+    state.last_web_event = util.safe_str(detail)
+    ac.debug("ProjectD-HUD " .. kind, state.last_web_event)
+end
+
+local function safe_web_get(url, kind, callback)
+    ensure_web_timeouts()
+    state.last_fetch_url = url
+    state.last_fetch_kind = kind or ""
+    if web == nil or web.get == nil then
+        log_web_event(kind .. " fail", "web_unavailable")
+        callback("web_unavailable", nil)
+        return
+    end
+    log_web_event(kind .. " start", url)
+    local ok, err_call = pcall(web.get, url, function(a, b)
+        local err, response = util.normalize_web_response(a, b)
+        local code = util.http_status_code(response)
+        if util.is_web_error(err) then
+            log_web_event(kind .. " err", tostring(err))
+        else
+            log_web_event(kind .. " ok", "http=" .. tostring(code or "?"))
+        end
+        callback(err, response)
+    end)
+    if not ok then
+        log_web_event(kind .. " throw", tostring(err_call))
+        callback(tostring(err_call), nil)
+    end
+end
+
 local function profile_fetch_url(ctx, server_name)
     return string.format(
         "%s%s?steamId=%s&serverName=%s&track=%s&trackConfig=%s&carModel=%s",
@@ -106,7 +147,7 @@ function fetch.start_profile_fetch(ctx, force_new_cycle, chain_next)
         ac.debug("ProjectD-HUD profile GET", url)
     end
 
-    web.get(url, function(err, response)
+    safe_web_get(url, "profile", function(err, response)
         state.profile_fetch_pending = false
 
         local function try_next(reason)
@@ -191,7 +232,6 @@ end
 
 function fetch.start_fetch(ctx, car_filter, force_new_cycle)
     if state.fetch_pending then return end
-    if state.profile_fetch_pending then return end
 
     ctx.player_steam_id = steam.normalize_steam_id(ctx.player_steam_id)
     if util.safe_str(ctx.track_id) == "" then
@@ -223,9 +263,13 @@ function fetch.start_fetch(ctx, car_filter, force_new_cycle)
     local url = session_url(ctx, server_name, car_filter)
     state.fetch_pending = true
     state.last_fetch_at = os.clock()
+    state.session_fetch_started_at = os.clock()
     state.last_session_had_players = false
+    if state.is_debug() then
+        ac.debug("ProjectD-HUD session GET", url)
+    end
 
-    web.get(url, function(err, response)
+    safe_web_get(url, "session", function(err, response)
         state.fetch_pending = false
         state.last_http_status = util.http_status_code(response) or (response and response.status) or nil
 
@@ -280,8 +324,6 @@ function fetch.fetch_session(car_filter, force)
     car_filter = car_filter or "global"
     local now = os.clock()
 
-    if state.profile_fetch_pending then return end
-
     if not force and state.cached_bundle ~= nil and state.cached_filter == car_filter then
         if (now - state.cached_at) < config.CACHE_TTL_SEC then
             if bundle.bundle_needs_profile() then
@@ -317,6 +359,17 @@ function fetch.watchdog_profile_fetch(ctx)
         fetch.start_profile_fetch(ctx, false, true)
     else
         mark_profile_candidates_exhausted("profile_timeout")
+    end
+end
+
+function fetch.watchdog_session_fetch(ctx, car_filter)
+    if not state.fetch_pending then return end
+    if (os.clock() - state.session_fetch_started_at) < state.SESSION_FETCH_TIMEOUT_SEC then return end
+    state.fetch_pending = false
+    ac.debug("ProjectD-HUD session", "fetch timeout")
+    state.last_error = "session_timeout"
+    if state.server_name_candidates ~= nil and state.fetch_attempt < #state.server_name_candidates then
+        fetch.start_fetch(ctx, car_filter or state.cached_filter, false)
     end
 end
 
