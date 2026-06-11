@@ -112,8 +112,12 @@ function status.get_status_message(kind)
     if state.last_error == "profile_timeout" then return "Profile timeout — retrying" end
     if state.last_error == "session_timeout" then return "API timeout — check connection" end
     if state.last_error == "context_error" then return "AC context error" end
+    if state.last_error == "server_not_found" then return "Server not found" end
+    if state.last_error == "track_not_found" then return "Track not found" end
+    if state.last_error == "car_not_found" then return "Car not found" end
     if state.last_error ~= nil and string.sub(state.last_error, 1, 4) == "http" then
-        return "API " .. tostring(state.last_http_status or "?")
+        if state.last_error == "http_404" then return "Server or track not found" end
+        return "API error (" .. tostring(state.last_http_status or "?") .. ")"
     end
     if state.last_error ~= nil then return tostring(state.last_error) end
     if not st.has_bundle then return "Waiting for API..." end

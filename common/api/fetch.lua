@@ -125,33 +125,23 @@ function fetch.start_profile_fetch(ctx, force_new_cycle, chain_next)
 
         state.last_http_status = util.http_status_code(response) or state.last_http_status
 
-        if not util.http_response_ok(response) then
-            local code = util.http_status_code(response)
-            if code == 404 and state.profile_fetch_attempt < #candidates then
+        local raw, err_reason, retry_server = util.read_api_response(err, response)
+        if err_reason ~= nil then
+            if (retry_server or err_reason == "server_not_found" or err_reason == "track_not_found")
+                and state.profile_fetch_attempt < #candidates then
                 fetch.start_profile_fetch(ctx, false, true)
                 return
             end
-            try_next("http_" .. tostring(code or "nil"))
+            if err_reason == "user_not_found" or err_reason == "profile_unavailable" then
+                state.last_error = err_reason
+                state.profile_candidates_exhausted = true
+                return
+            end
+            try_next(err_reason)
             return
-        end
-
-        local raw = util.decode_json(util.response_body(response))
-        if raw == nil and type(response) == "table" then
-            raw = response
         end
         if raw == nil then
             try_next("json_parse_failed")
-            return
-        end
-
-        if raw.ok == false then
-            local reason = tostring(raw.reason or "user_not_found")
-            if reason == "server_not_found" or reason == "track_not_found" then
-                try_next(reason)
-            else
-                state.last_error = reason
-                state.profile_candidates_exhausted = true
-            end
             return
         end
 
@@ -255,7 +245,6 @@ function fetch.start_top10_fetch(ctx, car_filter, force_new_cycle)
     safe_web_get(url, "top10", function(err, response)
         state.fetch_pending = false
         state.fetch_car_filter = nil
-        state.last_http_status = util.http_status_code(response) or (response and response.status) or nil
 
         local function retry_or_finish()
             if state.fetch_attempt < #state.server_name_candidates then
@@ -265,25 +254,19 @@ function fetch.start_top10_fetch(ctx, car_filter, force_new_cycle)
             run_scheduled_filter_fetch(ctx)
         end
 
-        if util.is_web_error(err) then
-            state.last_error = "network_error"
+        state.last_http_status = util.http_status_code(response) or state.last_http_status
+        local raw, err_reason, retry_server = util.read_api_response(err, response)
+        if err_reason ~= nil then
+            if (retry_server or err_reason == "server_not_found" or err_reason == "track_not_found")
+                and state.fetch_attempt < #state.server_name_candidates then
+                fetch.start_top10_fetch(ctx, car_filter, false)
+                return
+            end
+            state.last_error = err_reason
             retry_or_finish()
             return
         end
-        if not util.http_response_ok(response) then
-            state.last_error = "http_" .. tostring(util.http_status_code(response) or "nil")
-            retry_or_finish()
-            return
-        end
-
-        local raw = util.decode_json(util.response_body(response))
-        if raw == nil and type(response) == "table" then raw = response end
         if raw == nil then
-            retry_or_finish()
-            return
-        end
-        if raw.ok == false then
-            state.last_error = tostring(raw.reason or "car_not_found")
             retry_or_finish()
             return
         end
@@ -345,25 +328,20 @@ function fetch.start_fetch(ctx, car_filter, force_new_cycle)
         state.fetch_car_filter = nil
         state.last_http_status = util.http_status_code(response) or (response and response.status) or nil
 
-        if util.is_web_error(err) then
-            state.last_error = "network_error"
+        state.last_http_status = util.http_status_code(response) or state.last_http_status
+
+        local raw, err_reason, retry_server = util.read_api_response(err, response)
+        if err_reason ~= nil then
+            if (retry_server or err_reason == "server_not_found" or err_reason == "track_not_found")
+                and state.fetch_attempt < #state.server_name_candidates then
+                fetch.start_fetch(ctx, car_filter, false)
+                return
+            end
+            state.last_error = err_reason
             if state.fetch_attempt < #state.server_name_candidates then
                 fetch.start_fetch(ctx, car_filter, false)
             end
             return
-        end
-
-        if not util.http_response_ok(response) then
-            state.last_error = "http_" .. tostring(util.http_status_code(response) or "nil")
-            if state.fetch_attempt < #state.server_name_candidates then
-                fetch.start_fetch(ctx, car_filter, false)
-            end
-            return
-        end
-
-        local raw = util.decode_json(util.response_body(response))
-        if raw == nil and type(response) == "table" then
-            raw = response
         end
         if raw == nil then
             if state.fetch_attempt < #state.server_name_candidates then
@@ -374,6 +352,12 @@ function fetch.start_fetch(ctx, car_filter, force_new_cycle)
 
         local data = parse.normalize_session_response(raw, ctx.player_steam_id)
         if data == nil then
+            if state.last_error == "server_not_found" or state.last_error == "track_not_found" then
+                if state.fetch_attempt < #state.server_name_candidates then
+                    fetch.start_fetch(ctx, car_filter, false)
+                    return
+                end
+            end
             if state.fetch_attempt < #state.server_name_candidates then
                 fetch.start_fetch(ctx, car_filter, false)
             end

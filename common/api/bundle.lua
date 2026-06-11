@@ -59,6 +59,7 @@ function bundle.apply_bundle(data, car_filter)
     state.fetch_attempt = 0
     state.server_name_candidates = nil
     state.fetch_car_filter = nil
+    state.last_error = nil
     return true
 end
 

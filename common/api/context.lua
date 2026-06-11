@@ -1,6 +1,7 @@
 --[[ AC session context: track, car, server name, steam id. ]]
 
 local config = require("common.config")
+local state = require("common.api.state")
 local util = require("common.api.util")
 local steam = require("common.api.steam")
 
@@ -98,8 +99,11 @@ function context.build_server_name_candidates(ctx)
         out[#out + 1] = name
     end
 
-    push(ctx.server_name)
+    if state.last_resolved_server_name ~= nil and state.last_resolved_server_name ~= "" then
+        push(state.last_resolved_server_name)
+    end
     push(steam.server_name_from_race_ini())
+    push(ctx.server_name)
 
     local full_name = util.safe_str(ctx.server_name)
     if full_name ~= "" then

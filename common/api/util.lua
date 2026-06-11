@@ -61,7 +61,7 @@ function util.response_body(response)
     return nil
 end
 
-function util.decode_json(body)
+function util.parse_json_body(body)
     if type(body) == "table" then return body end
     if body == nil then return nil end
     body = util.safe_str(body)
@@ -83,8 +83,50 @@ function util.decode_json(body)
         if ok2 and type(data) == "table" then return data end
     end
 
-    state.last_error = "json_parse_failed"
     return nil
+end
+
+function util.decode_json(body)
+    local data = util.parse_json_body(body)
+    if data == nil and body ~= nil and util.safe_str(body) ~= "" then
+        state.last_error = "json_parse_failed"
+    end
+    return data
+end
+
+--- Parse ac-data response even when HTTP status is 404 (body is often { ok:false, reason }).
+function util.read_api_response(err, response)
+    if util.is_web_error(err) then
+        return nil, "network_error", false
+    end
+
+    local code = util.http_status_code(response)
+    local raw = util.parse_json_body(util.response_body(response))
+    if raw == nil and type(response) == "table" then
+        if response.ok ~= nil or response.reason ~= nil or response.entries ~= nil or response.leaderboard ~= nil then
+            raw = response
+        end
+    end
+
+    if raw ~= nil and raw.ok == false then
+        local reason = tostring(raw.reason or "api_error")
+        local retry_server = reason == "server_not_found" or reason == "track_not_found"
+        return raw, reason, retry_server
+    end
+
+    if code ~= nil and code ~= 200 then
+        if raw ~= nil and raw.reason ~= nil then
+            local reason = tostring(raw.reason)
+            return raw, reason, reason == "server_not_found" or reason == "track_not_found"
+        end
+        return raw, "http_" .. tostring(code), code == 404
+    end
+
+    if raw == nil and util.http_response_ok(response) then
+        return nil, "json_parse_failed", false
+    end
+
+    return raw, nil, false
 end
 
 function util.url_encode(str)
