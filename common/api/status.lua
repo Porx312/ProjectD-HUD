@@ -1,13 +1,11 @@
---[[ User-facing status messages and debug overlay lines. ]]
+--[[ User-facing status messages. ]]
 
 local state = require("common.api.state")
 local util = require("common.api.util")
-local steam = require("common.api.steam")
 local context = require("common.api.context")
 local profile = require("common.api.profile")
 local bundle = require("common.api.bundle")
 local parse = require("common.api.parse")
-local web_queue = require("common.api.web_queue")
 
 local status = {}
 
@@ -132,98 +130,6 @@ function status.get_status_message(kind)
     if state.last_error ~= nil then return tostring(state.last_error) end
     if not st.has_bundle then return "Waiting for API..." end
     return "No data"
-end
-
-local function format_name_list(list, max_items)
-    if list == nil or type(list) ~= "table" or #list == 0 then return "" end
-    max_items = max_items or 4
-    local parts = {}
-    for i = 1, math.min(#list, max_items) do
-        parts[#parts + 1] = tostring(list[i])
-    end
-    local text = table.concat(parts, ", ")
-    if #list > max_items then text = text .. "..." end
-    if #text > 64 then text = string.sub(text, 1, 61) .. "..." end
-    return text
-end
-
-function status.get_diag_lines()
-    local ok, ctx = pcall(context.read_session_context)
-    if not ok then ctx = {} end
-    local st = status.get_status()
-    local race = steam.get_race_ini_status()
-    local url = util.safe_str(state.last_fetch_url)
-    if #url > 96 then
-        url = string.sub(url, 1, 93) .. "..."
-    end
-    local candidates = state.server_names_tried
-    if (candidates == nil or #candidates == 0) and state.server_name_candidates ~= nil then
-        candidates = state.server_name_candidates
-    end
-    if candidates == nil or #candidates == 0 then
-        local ok_list, fresh = pcall(context.build_server_name_candidates, ctx)
-        if ok_list and fresh ~= nil then candidates = fresh end
-    end
-    local try_total = candidates ~= nil and #candidates or 0
-    local sess_age = ""
-    if state.fetch_pending and (state.session_fetch_started_at or 0) > 0 then
-        sess_age = string.format("%.1fs", os.clock() - state.session_fetch_started_at)
-    end
-    local prof_age = ""
-    if state.profile_fetch_pending and (state.profile_fetch_started_at or 0) > 0 then
-        prof_age = string.format("%.1fs", os.clock() - state.profile_fetch_started_at)
-    end
-    return {
-        "ver=" .. util.safe_str(state.hud_version),
-        "tick=" .. tostring(state.tick_count),
-        "ctx_ready=" .. tostring(st.context_ready),
-        "online=" .. tostring(ctx.is_online),
-        "sess_age=" .. sess_age,
-        "prof_age=" .. prof_age,
-        "steam=" .. util.safe_str(ctx.player_steam_id),
-        "race_path=" .. util.safe_str(race.path ~= "" and race.path or "not found"),
-        "race_remote=" .. tostring(race.remote_active),
-        "race_guid=" .. tostring(race.has_guid),
-        "server=" .. util.safe_str(ctx.server_name),
-        "tried=" .. util.safe_str(state.last_server_tried),
-        "names=" .. format_name_list(candidates, 5),
-        "try=" .. tostring(state.fetch_attempt) .. "/" .. tostring(try_total),
-        "override=" .. util.safe_str(state.server_override_storage:get()),
-        "race_server=" .. steam.server_name_from_race_ini(),
-        "race_player=" .. steam.remote_player_name_from_race_ini(),
-        "race_display=" .. steam.server_display_name_raw(),
-        "race.ini=" .. steam.steam_from_race_ini(),
-        "bridge=" .. steam.steam_from_online_bridge(),
-        "track=" .. util.safe_str(ctx.track_id) .. "/" .. util.safe_str(ctx.layout_id),
-        "full=" .. util.safe_str(ctx.track_full_id),
-        "car=" .. util.safe_str(ctx.car_id),
-        "http=" .. tostring(st.http_status),
-        "err=" .. tostring(st.error),
-        "state=" .. state.state_tag(),
-        "filter=" .. util.safe_str(state.cached_filter),
-        "bundle=" .. tostring(st.has_bundle),
-        "entries=" .. tostring(st.entry_count),
-        "rows_ui=" .. tostring(st.ui_row_count),
-        "profile=" .. tostring(profile.coalesce_profile(state.cached_bundle and state.cached_bundle.profile) ~= nil),
-        "rank=" .. tostring(state.cached_bundle and state.cached_bundle.profile and state.cached_bundle.profile.rank or "?"),
-        "rival=" .. tostring(state.cached_bundle ~= nil and state.cached_bundle.profile ~= nil and state.cached_bundle.profile.rival ~= nil),
-        "srv=" .. util.safe_str(state.last_resolved_server_name),
-        "sess_load=" .. tostring(state.fetch_pending),
-        "prof_load=" .. tostring(state.profile_fetch_pending),
-        "prof_done=" .. tostring(state.profile_candidates_exhausted),
-        "prof_try=" .. tostring(state.profile_fetch_attempt),
-        "players=" .. tostring(state.last_session_had_players),
-        "fetch=" .. util.safe_str(state.last_fetch_kind),
-        "url=" .. url,
-        "web=" .. util.safe_str(state.last_web_event),
-        "web_q=" .. tostring(web_queue.queue_len()),
-        "web_now=" .. util.safe_str(state.web_inflight),
-    }
-end
-
-function status.get_debug_lines()
-    if not state.is_debug() then return {} end
-    return status.get_diag_lines()
 end
 
 return status

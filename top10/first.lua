@@ -5,8 +5,6 @@ local layout = require("common.layout")
 local data = require("common.data")
 local draw = require("common.draw")
 local images = require("common.images")
-local hud_debug = require("common.hud_debug")
-
 local mod = {}
 
 local selected_filter = "global"
@@ -136,8 +134,6 @@ function mod.main(dt)
         )
         ui.popDWriteFont()
     end
-
-    hud_debug.draw(data, win, { max_lines = 22, font_size = 8 })
 end
 
 return mod

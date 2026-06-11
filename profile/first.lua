@@ -4,7 +4,6 @@ local theme = require("common.theme")
 local data = require("common.data")
 local draw = require("common.draw")
 local images = require("common.images")
-local hud_debug = require("common.hud_debug")
 local mod = {}
 
 function mod.init()
@@ -45,8 +44,6 @@ function mod.main(dt)
     else
         draw.profile_block(vec2(0, 0), win, profile)
     end
-
-    hud_debug.draw(data, win, { max_lines = 18, font_size = 8 })
 end
 
 return mod

@@ -17,14 +17,7 @@ if use_api then
         end
         return err_text
     end
-    function mock.get_diag_lines()
-        return { "mode=mock", "err=api_data failed to load" }
-    end
-    function mock.should_show_diag() return true end
     return mock
 end
 
-local mock = require("common.mock_data")
-function mock.get_diag_lines() return { "mode=mock", "use_api=false" } end
-function mock.should_show_diag() return false end
-return mock
+return require("common.mock_data")

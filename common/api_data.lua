@@ -71,26 +71,6 @@ function api.get_status_message(kind)
     return status.get_status_message(kind)
 end
 
-function api.is_debug()
-    return state.is_debug()
-end
-
-function api.get_diag_lines()
-    return status.get_diag_lines()
-end
-
-function api.get_debug_lines()
-    return status.get_debug_lines()
-end
-
-function api.should_show_diag()
-    if state.is_debug() then return true end
-    if state.fetch_pending or state.profile_fetch_pending then return true end
-    if state.cached_bundle == nil then return true end
-    if state.last_error ~= nil and state.last_error ~= "" then return true end
-    return false
-end
-
 function api.get_context()
     if state.cached_bundle ~= nil and state.cached_bundle.context ~= nil then
         local c = state.cached_bundle.context
