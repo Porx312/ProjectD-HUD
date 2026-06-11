@@ -18,7 +18,9 @@ local function profile_missing_message()
     end
     if state.last_error == "missing_steam" then return "Join online server (no Steam in race.ini)" end
     if state.last_error == "network_error" then return "Network error (profile)" end
-    if state.last_error == "server_not_found" then return "Server not found" end
+    if state.last_error == "server_not_found" then return "Server not found — set server name in CSP storage" end
+    if state.last_error == "track_not_found" then return "Track not found for this server" end
+    if state.last_error == "car_not_found" then return "Car filter not found" end
     if state.last_error == "profile_unavailable" then return "Profile unavailable" end
     if state.last_error ~= nil and string.sub(state.last_error, 1, 4) == "http" then
         return "Profile unavailable"
@@ -113,7 +115,13 @@ function status.get_status_message(kind)
     if state.last_error == "profile_timeout" then return "Profile timeout — retrying" end
     if state.last_error == "session_timeout" then return "API timeout — check connection" end
     if state.last_error == "context_error" then return "AC context error" end
+    if state.last_error == "server_not_found" then return "Server not found — set ProjectD-HUD:server_name" end
+    if state.last_error == "track_not_found" then return "Track not found" end
     if state.last_error ~= nil and string.sub(state.last_error, 1, 4) == "http" then
+        local hint = util.safe_str(state.last_api_reason)
+        if hint ~= "" and hint ~= state.last_error then
+            return hint .. " (HTTP " .. tostring(state.last_http_status or "?") .. ")"
+        end
         return "API " .. tostring(state.last_http_status or "?")
     end
     if state.last_error ~= nil then return tostring(state.last_error) end
@@ -157,6 +165,11 @@ function status.get_diag_lines()
         "full=" .. util.safe_str(ctx.track_full_id),
         "car=" .. util.safe_str(ctx.car_id),
         "http=" .. tostring(st.http_status),
+        "api=" .. util.safe_str(state.last_api_reason),
+        "try_srv=" .. util.safe_str(state.last_fetch_plan and state.last_fetch_plan.server_name),
+        "try_track=" .. util.safe_str(state.last_fetch_plan and state.last_fetch_plan.track_id)
+            .. "/" .. util.safe_str(state.last_fetch_plan and state.last_fetch_plan.layout_id),
+        "try=" .. tostring(state.fetch_attempt) .. "/" .. tostring(state.fetch_plans and #state.fetch_plans or 0),
         "err=" .. tostring(st.error),
         "state=" .. state.state_tag(),
         "sync=" .. tostring(state.local_sync_ver or 0) .. "/" .. tostring(ac.storage("ProjectD-HUD:sync_ver", 0):get() or 0),

@@ -59,6 +59,13 @@ local function profile_server_list(ctx)
     return list
 end
 
+local function retryable_api_reason(reason)
+    return reason == "server_not_found"
+        or reason == "track_not_found"
+        or reason == "car_not_found"
+        or (reason ~= nil and string.sub(reason, 1, 4) == "http")
+end
+
 local function mark_profile_candidates_exhausted(reason)
     state.profile_candidates_exhausted = true
     state.profile_server_candidates = nil
@@ -129,40 +136,40 @@ function fetch.start_profile_fetch(ctx, force_new_cycle, chain_next)
             mark_profile_candidates_exhausted(reason)
         end
 
-        if util.is_web_error(err) then
+        local raw, api_reason = util.read_api_payload(err, response)
+        state.last_http_status = util.http_status_code(response) or state.last_http_status
+        state.last_api_reason = api_reason or ""
+
+        if api_reason == "network_error" then
             try_next("network_error")
             return
         end
 
-        state.last_http_status = util.http_status_code(response) or state.last_http_status
-
-        if not util.http_response_ok(response) then
-            local code = util.http_status_code(response)
-            if code == 404 and state.profile_fetch_attempt < #candidates then
+        if api_reason ~= nil and api_reason ~= "" then
+            if retryable_api_reason(api_reason) and state.profile_fetch_attempt < #candidates then
                 fetch.start_profile_fetch(ctx, false, true)
                 return
             end
-            try_next("http_" .. tostring(code or "nil"))
-            return
-        end
-
-        local raw = util.decode_json(util.response_body(response))
-        if raw == nil and type(response) == "table" then
-            raw = response
-        end
-        if raw == nil then
-            try_next("json_parse_failed")
-            return
-        end
-
-        if raw.ok == false then
-            local reason = tostring(raw.reason or "user_not_found")
-            if reason == "server_not_found" or reason == "track_not_found" then
-                try_next(reason)
-            else
+            if raw == nil then
+                try_next(api_reason)
+                return
+            end
+            if raw.ok == false then
+                local reason = tostring(raw.reason or raw.error or api_reason)
+                if retryable_api_reason(reason) and state.profile_fetch_attempt < #candidates then
+                    fetch.start_profile_fetch(ctx, false, true)
+                    return
+                end
                 state.last_error = reason
                 state.profile_candidates_exhausted = true
+                return
             end
+            try_next(api_reason)
+            return
+        end
+
+        if raw == nil then
+            try_next("json_parse_failed")
             return
         end
 
@@ -187,15 +194,15 @@ function fetch.start_profile_fetch(ctx, force_new_cycle, chain_next)
     end)
 end
 
-local function session_url(ctx, server_name, car_filter)
+local function session_url(ctx, plan, car_filter)
     return string.format(
         "%s%s?steamIds=%s&serverName=%s&track=%s&trackConfig=%s&carFilter=%s&carModel=%s",
         config.API_BASE_URL,
         config.SESSION_PATH,
         util.url_encode(ctx.player_steam_id),
-        util.url_encode(server_name),
-        util.url_encode(ctx.track_id),
-        util.url_encode(ctx.layout_id),
+        util.url_encode(plan.server_name),
+        util.url_encode(plan.track_id),
+        util.url_encode(plan.layout_id),
         util.url_encode(car_filter),
         util.url_encode(ctx.car_id)
     )
@@ -243,26 +250,28 @@ function fetch.start_fetch(ctx, car_filter, force_new_cycle)
         return
     end
 
-    if force_new_cycle or state.server_name_candidates == nil then
+    if force_new_cycle or state.fetch_plans == nil then
+        state.fetch_plans = context.build_fetch_plans(ctx)
         state.server_name_candidates = context.build_server_name_candidates(ctx)
         state.fetch_attempt = 0
     end
 
-    if state.server_name_candidates == nil or #state.server_name_candidates == 0 then
+    if state.fetch_plans == nil or #state.fetch_plans == 0 then
         state.last_error = "missing_server_name"
         finish_fetch_lock()
         return
     end
 
     state.fetch_attempt = state.fetch_attempt + 1
-    local server_name = state.server_name_candidates[state.fetch_attempt]
-    if server_name == nil then
+    local plan = state.fetch_plans[state.fetch_attempt]
+    if plan == nil then
         state.fetch_attempt = 0
         finish_fetch_lock()
         return
     end
 
-    local url = session_url(ctx, server_name, car_filter)
+    state.last_fetch_plan = plan
+    local url = session_url(ctx, plan, car_filter)
     state.fetch_pending = true
     state.fetch_car_filter = car_filter
     state.last_fetch_at = os.clock()
@@ -274,10 +283,15 @@ function fetch.start_fetch(ctx, car_filter, force_new_cycle)
 
     safe_web_get(url, "session", function(err, response)
         state.fetch_pending = false
-        state.last_http_status = util.http_status_code(response) or (response and response.status) or nil
+        local raw, api_reason, http_code = util.read_api_payload(err, response)
+        state.last_http_status = http_code or (response and response.status) or nil
+        state.last_api_reason = api_reason or ""
 
-        local function retry_or_finish()
-            if state.fetch_attempt < #state.server_name_candidates then
+        local function retry_or_finish(fail_reason)
+            if fail_reason ~= nil and fail_reason ~= "" then
+                state.last_error = fail_reason
+            end
+            if state.fetch_attempt < #(state.fetch_plans or {}) then
                 finish_fetch_lock()
                 fetch.start_fetch(ctx, car_filter, false)
                 return
@@ -286,34 +300,39 @@ function fetch.start_fetch(ctx, car_filter, force_new_cycle)
             run_scheduled_filter_fetch(ctx)
         end
 
-        if util.is_web_error(err) then
-            state.last_error = "network_error"
-            retry_or_finish()
+        if api_reason == "network_error" then
+            retry_or_finish("network_error")
             return
         end
 
-        if not util.http_response_ok(response) then
-            state.last_error = "http_" .. tostring(util.http_status_code(response) or "nil")
-            retry_or_finish()
-            return
+        if api_reason ~= nil and api_reason ~= "" then
+            if raw ~= nil and raw.ok == false then
+                api_reason = tostring(raw.reason or raw.error or api_reason)
+            end
+            if retryable_api_reason(api_reason) then
+                retry_or_finish(api_reason)
+                return
+            end
+            if raw == nil then
+                retry_or_finish(api_reason)
+                return
+            end
         end
 
-        local raw = util.decode_json(util.response_body(response))
-        if raw == nil and type(response) == "table" then
-            raw = response
-        end
         if raw == nil then
-            retry_or_finish()
+            retry_or_finish("json_parse_failed")
             return
         end
 
         local data = parse.normalize_session_response(raw, ctx.player_steam_id)
         if data == nil then
-            retry_or_finish()
+            retry_or_finish(state.last_error or "parse_failed")
             return
         end
 
-        state.last_resolved_server_name = server_name
+        state.last_resolved_server_name = plan.server_name
+        state.last_error = nil
+        state.last_api_reason = ""
         bundle.apply_bundle(data, car_filter)
         state.profile_candidates_exhausted = false
         finish_fetch_lock()
@@ -380,7 +399,7 @@ function fetch.watchdog_session_fetch(ctx, car_filter)
     ac.debug("ProjectD-HUD session", "fetch timeout")
     state.last_error = "session_timeout"
     finish_fetch_lock()
-    if state.server_name_candidates ~= nil and state.fetch_attempt < #state.server_name_candidates then
+    if state.fetch_plans ~= nil and state.fetch_attempt < #state.fetch_plans then
         fetch.start_fetch(ctx, car_filter or state.cached_filter, false)
     else
         run_scheduled_filter_fetch(ctx)

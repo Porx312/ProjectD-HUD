@@ -20,6 +20,9 @@ local function create_state()
         profile_fetch_attempt = 0,
         profile_candidates_exhausted = false,
         server_name_candidates = nil,
+        fetch_plans = nil,
+        last_fetch_plan = nil,
+        last_api_reason = "",
         profile_server_candidates = nil,
         last_resolved_server_name = nil,
         last_session_had_players = false,
@@ -36,7 +39,7 @@ local function create_state()
         known_filters = nil,
         fetch_car_filter = nil,
         scheduled_filter_fetch = nil,
-        hud_version = "1.0.20",
+        hud_version = "1.0.21",
 
         CONTEXT_RETRY_SEC = 0.5,
         TICK_INTERVAL_SEC = 0.15,
@@ -46,6 +49,7 @@ local function create_state()
 
         debug_storage = ac.storage("ProjectD-HUD:debug", true),
         steam_override_storage = ac.storage("ProjectD-HUD:steam_id", ""),
+        server_override_storage = ac.storage("ProjectD-HUD:server_name", ""),
         steam_cache_storage = ac.storage("ProjectD-HUD:steam_cache", ""),
     }
 end

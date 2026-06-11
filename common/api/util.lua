@@ -78,7 +78,7 @@ function util.encode_json(data)
     return nil
 end
 
-function util.decode_json(body)
+function util.decode_json_quiet(body)
     if type(body) == "table" then return body end
     if body == nil then return nil end
     body = util.safe_str(body)
@@ -100,10 +100,43 @@ function util.decode_json(body)
         if ok2 and type(data) == "table" then return data end
     end
 
-    if state ~= nil then
+    return nil
+end
+
+function util.decode_json(body)
+    local data = util.decode_json_quiet(body)
+    if data == nil and body ~= nil and util.safe_str(body) ~= "" and state ~= nil then
         state.last_error = "json_parse_failed"
     end
-    return nil
+    return data
+end
+
+--- ac-data returns HTTP 404 with JSON { ok:false, reason:"server_not_found" } — parse before treating as generic 404.
+function util.read_api_payload(err, response)
+    if util.is_web_error(err) then
+        return nil, "network_error", util.http_status_code(response)
+    end
+
+    local raw = util.decode_json_quiet(util.response_body(response))
+    if raw == nil and type(response) == "table" and (response.ok ~= nil or response.reason ~= nil or response.error ~= nil) then
+        raw = response
+    end
+
+    local code = util.http_status_code(response)
+    if raw ~= nil and raw.ok == false then
+        local reason = util.safe_str(raw.reason or raw.error)
+        if reason ~= "" then return raw, reason, code end
+    end
+
+    if not util.http_response_ok(response) then
+        return raw, "http_" .. tostring(code or "nil"), code
+    end
+
+    if raw == nil then
+        return nil, "json_parse_failed", code
+    end
+
+    return raw, nil, code
 end
 
 function util.url_encode(str)
