@@ -32,6 +32,9 @@ function mod.main(dt)
     draw.card_panel(vec2(0, 0), win)
 
     local profile = data.get_player_profile()
+    if profile ~= nil then
+        images.request_avatar(images.resolve_url(profile.name, profile.avatar_url))
+    end
     if profile == nil then
         ui.pushDWriteFont(theme.fonts.reg)
         local msg = "No profile data"

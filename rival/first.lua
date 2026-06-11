@@ -33,6 +33,9 @@ function mod.main(dt)
 
     local rival = data.get_rival()
     local profile = data.get_player_profile()
+    if rival ~= nil then
+        images.request_avatar(images.resolve_url(rival.name, rival.avatar_url))
+    end
 
     if rival == nil then
         local msg = "No rival"
