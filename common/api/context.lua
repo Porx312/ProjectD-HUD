@@ -38,29 +38,52 @@ local function parse_track_full_id(full_id)
     return full_id, ""
 end
 
-local function sim_server_names(sim)
-    local names = {}
-    if sim == nil then return names end
-    local keys = { "serverName", "onlineServerName", "acOnlineServerName" }
-    for _, key in ipairs(keys) do
-        local name = util.normalize_server_name(util.safe_call(function() return sim[key] end))
-        if name ~= "" then names[#names + 1] = name end
+local function sim_server_name_sources(sim)
+    local raw = {}
+    local function add(value)
+        value = util.trim_server_name(value)
+        if value ~= "" then raw[#raw + 1] = value end
     end
-    return names
+    if sim ~= nil then
+        for _, key in ipairs({ "serverName", "onlineServerName", "acOnlineServerName" }) do
+            add(util.safe_call(function() return sim[key] end))
+        end
+    end
+    if ac.getServerName ~= nil then
+        add(util.safe_call(ac.getServerName))
+    end
+    return raw
+end
+
+function context.is_online_session(sim)
+    sim = sim or util.safe_call(function() return ac.getSim() end)
+    if sim ~= nil then
+        if util.safe_call(function() return sim.isOnlineRace end) == true then return true end
+        if util.safe_call(function() return sim.isServerRace end) == true then return true end
+        if util.safe_call(function() return sim.isOnlineEvent end) == true then return true end
+    end
+    if ac.isOnlineRace ~= nil and util.safe_call(ac.isOnlineRace) == true then return true end
+    return steam.get_race_ini_status().remote_active
 end
 
 local function read_server_name(sim)
-    local override = util.normalize_server_name(state.server_override_storage:get())
+    local override = util.trim_server_name(state.server_override_storage:get())
     if override ~= "" then return override end
 
-    local name = steam.server_name_from_race_ini()
-    if name ~= "" then return name end
-
-    for _, sim_name in ipairs(sim_server_names(sim)) do
-        if sim_name ~= "" then return sim_name end
+    if context.is_online_session(sim) then
+        for _, name in ipairs(sim_server_name_sources(sim)) do
+            if name ~= "" then return name end
+        end
     end
 
-    return steam.server_slug_from_race_ini()
+    local display = steam.server_display_name_raw()
+    if display ~= "" then return display end
+
+    for _, name in ipairs(sim_server_name_sources(sim)) do
+        if name ~= "" then return name end
+    end
+
+    return steam.server_name_from_race_ini()
 end
 
 function context.read_session_context()
@@ -90,6 +113,7 @@ function context.read_session_context()
         player_steam_id = steam.read_player_steam_id(sim),
         server_name = read_server_name(sim),
         track_full_id = full_id,
+        is_online = context.is_online_session(sim),
     }
 end
 
@@ -101,7 +125,15 @@ end
 
 function context.build_server_name_candidates(ctx)
     local seen, out = {}, {}
-    local function push(name)
+    local function push_raw(name)
+        name = util.trim_server_name(name)
+        if name == "" then return end
+        local key = string.lower(name)
+        if seen[key] then return end
+        seen[key] = true
+        out[#out + 1] = name
+    end
+    local function push_short(name)
         name = util.normalize_server_name(name)
         if name == "" then return end
         local key = string.lower(name)
@@ -109,31 +141,38 @@ function context.build_server_name_candidates(ctx)
         seen[key] = true
         out[#out + 1] = name
     end
-
-    local override = util.normalize_server_name(state.server_override_storage:get())
-    if override ~= "" then push(override) end
-
-    if state.last_resolved_server_name ~= nil and state.last_resolved_server_name ~= "" then
-        push(state.last_resolved_server_name)
+    local function push_both(name)
+        push_raw(name)
+        push_short(name)
     end
-
-    for _, name in ipairs(steam.all_server_names_from_race_ini()) do push(name) end
-    push(steam.server_name_from_race_ini())
-    push(steam.server_slug_from_race_ini())
 
     local sim = util.safe_call(function() return ac.getSim() end)
-    for _, name in ipairs(sim_server_names(sim)) do push(name) end
-    push(ctx.server_name)
+    local online = context.is_online_session(sim)
 
-    local full_name = util.safe_str(ctx.server_name)
-    if full_name ~= "" then
-        local prefix = full_name:match("^([^|]+)")
-        if prefix ~= nil then push(prefix:gsub("%s+$", "")) end
-        local before_pipe = full_name:match("^([^|]+)|")
-        if before_pipe ~= nil then push(before_pipe:gsub("%s+$", "")) end
+    local override = util.trim_server_name(state.server_override_storage:get())
+    if override ~= "" then push_both(override) end
+
+    if state.last_resolved_server_name ~= nil and state.last_resolved_server_name ~= "" then
+        push_both(state.last_resolved_server_name)
     end
 
-    for _, slug in ipairs(config.SERVER_SLUG_FALLBACKS or {}) do push(slug) end
+    if online then
+        for _, name in ipairs(sim_server_name_sources(sim)) do
+            push_both(name)
+        end
+    end
+
+    -- SERVER_NAME is valid even when race.ini [REMOTE] ACTIVE=0 (stale file after reconnect).
+    for _, name in ipairs(steam.all_server_names_from_race_ini()) do
+        push_both(name)
+    end
+
+    push_both(ctx.server_name)
+
+    for _, fallback in ipairs(config.SERVER_NAME_FALLBACKS or {}) do
+        push_both(fallback)
+    end
+
     state.server_names_tried = out
     return out
 end

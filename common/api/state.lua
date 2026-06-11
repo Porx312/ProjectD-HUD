@@ -34,7 +34,7 @@ local function create_state()
         fetch_car_filter = nil,
         scheduled_filter_fetch = nil,
         filter_fetch_at = {},
-        hud_version = "1.0.22",
+        hud_version = "1.0.24",
 
         CONTEXT_RETRY_SEC = 0.5,
         TICK_INTERVAL_SEC = 0.25,

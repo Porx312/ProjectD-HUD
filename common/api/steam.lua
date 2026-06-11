@@ -174,7 +174,7 @@ end
 
 local function server_fields_from_remote_content(content)
     if content == "" then return "", "" end
-    local server_name, slug = "", ""
+    local server_name, player_name = "", ""
     local in_remote = false
     for line in content:gmatch("[^\r\n]+") do
         local section = line:match("^%[([^%]]+)%]")
@@ -183,52 +183,67 @@ local function server_fields_from_remote_content(content)
         elseif in_remote then
             local sn = line:match("^SERVER_NAME%s*=%s*(.+)$")
             if sn ~= nil and server_name == "" then
-                server_name = util.normalize_server_name(sn)
+                server_name = util.trim_server_name(sn)
             end
             local nm = line:match("^NAME%s*=%s*(.+)$")
-            if nm ~= nil and slug == "" then
-                slug = util.normalize_server_name(nm)
+            if nm ~= nil and player_name == "" then
+                player_name = util.trim_server_name(nm)
             end
         end
     end
-    return server_name, slug
+    return server_name, player_name
 end
 
-function steam.server_name_from_race_ini()
+--- AC [REMOTE] SERVER_NAME — full display title shown in the server browser.
+function steam.server_display_name_raw()
     local content = read_race_ini_raw()
-    local from_raw, slug_raw = server_fields_from_remote_content(content)
+    local from_raw = select(1, server_fields_from_remote_content(content))
     if from_raw ~= "" then return from_raw end
 
     local ini = get_race_ini()
     if ini ~= nil then
-        local name = util.normalize_server_name(ini:get("REMOTE", "SERVER_NAME", ""))
-        if name ~= "" then return name end
-        name = util.normalize_server_name(ini:get("REMOTE", "NAME", ""))
+        local name = util.trim_server_name(ini:get("REMOTE", "SERVER_NAME", ""))
         if name ~= "" then return name end
     end
-
-    if slug_raw ~= "" then return slug_raw end
     return ""
 end
 
-function steam.server_slug_from_race_ini()
+--- Short label (first segment before "|"), e.g. "ProjectD".
+function steam.server_name_from_race_ini()
+    local raw = steam.server_display_name_raw()
+    if raw ~= "" then return util.normalize_server_name(raw) end
+    return ""
+end
+
+--- [REMOTE] NAME is the player nick in AC, not the server id.
+function steam.remote_player_name_from_race_ini()
     local content = read_race_ini_raw()
-    local _, slug_raw = server_fields_from_remote_content(content)
-    if slug_raw ~= "" then return slug_raw end
+    local _, player_name = server_fields_from_remote_content(content)
+    if player_name ~= "" then return player_name end
 
     local ini = get_race_ini()
     if ini ~= nil then
-        local name = util.normalize_server_name(ini:get("REMOTE", "NAME", ""))
-        if name ~= "" then return name end
-        name = util.normalize_server_name(ini:get("REMOTE", "SERVER_NAME", ""))
-        if name ~= "" then return name end
+        return util.trim_server_name(ini:get("REMOTE", "NAME", ""))
     end
     return ""
+end
+
+--- Back-compat alias (debug only — do not use for API serverName).
+function steam.server_slug_from_race_ini()
+    return steam.remote_player_name_from_race_ini()
 end
 
 function steam.all_server_names_from_race_ini()
     local names, seen = {}, {}
-    local function add(name)
+    local function add_raw(name)
+        name = util.trim_server_name(name)
+        if name == "" then return end
+        local key = string.lower(name)
+        if seen[key] then return end
+        seen[key] = true
+        names[#names + 1] = name
+    end
+    local function add_short(name)
         name = util.normalize_server_name(name)
         if name == "" then return end
         local key = string.lower(name)
@@ -237,15 +252,15 @@ function steam.all_server_names_from_race_ini()
         names[#names + 1] = name
     end
 
-    local content = read_race_ini_raw()
-    local server_name, slug = server_fields_from_remote_content(content)
-    add(server_name)
-    add(slug)
+    local raw = steam.server_display_name_raw()
+    add_raw(raw)
+    add_short(raw)
 
     local ini = get_race_ini()
     if ini ~= nil then
-        add(ini:get("REMOTE", "SERVER_NAME", ""))
-        add(ini:get("REMOTE", "NAME", ""))
+        local ini_raw = util.trim_server_name(ini:get("REMOTE", "SERVER_NAME", ""))
+        add_raw(ini_raw)
+        add_short(ini_raw)
     end
     return names
 end

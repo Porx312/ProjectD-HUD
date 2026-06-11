@@ -137,12 +137,23 @@ function util.url_encode(str)
     end)
 end
 
-function util.normalize_server_name(name)
+function util.trim_server_name(name)
     name = util.safe_str(name)
     if name == "" then return "" end
     name = name:gsub("[%s%p]*[ℹiI]%d+%s*$", "")
-    name = name:gsub("%s+$", "")
+    name = name:gsub("^%s+", ""):gsub("%s+$", "")
     return name
+end
+
+--- Short label: first segment of "ProjectD | Track | Mode | ...".
+function util.normalize_server_name(name)
+    name = util.trim_server_name(name)
+    if name == "" then return "" end
+    local pipe = name:find("|", 1, true)
+    if pipe ~= nil then
+        name = name:sub(1, pipe - 1)
+    end
+    return util.trim_server_name(name)
 end
 
 function util.count_table_entries(list)

@@ -137,7 +137,7 @@ local function format_name_list(list, max_items)
     for i = 1, math.min(#list, max_items) do
         parts[#parts + 1] = tostring(list[i])
     end
-    local text = table.concat(parts, " | ")
+    local text = table.concat(parts, ", ")
     if #list > max_items then text = text .. "..." end
     if #text > 64 then text = string.sub(text, 1, 61) .. "..." end
     return text
@@ -173,6 +173,7 @@ function status.get_diag_lines()
         "ver=" .. util.safe_str(state.hud_version),
         "tick=" .. tostring(state.tick_count),
         "ctx_ready=" .. tostring(st.context_ready),
+        "online=" .. tostring(ctx.is_online),
         "sess_age=" .. sess_age,
         "prof_age=" .. prof_age,
         "steam=" .. util.safe_str(ctx.player_steam_id),
@@ -185,7 +186,8 @@ function status.get_diag_lines()
         "try=" .. tostring(state.fetch_attempt) .. "/" .. tostring(try_total),
         "override=" .. util.safe_str(state.server_override_storage:get()),
         "race_server=" .. steam.server_name_from_race_ini(),
-        "race_slug=" .. steam.server_slug_from_race_ini(),
+        "race_player=" .. steam.remote_player_name_from_race_ini(),
+        "race_display=" .. steam.server_display_name_raw(),
         "race.ini=" .. steam.steam_from_race_ini(),
         "bridge=" .. steam.steam_from_online_bridge(),
         "track=" .. util.safe_str(ctx.track_id) .. "/" .. util.safe_str(ctx.layout_id),

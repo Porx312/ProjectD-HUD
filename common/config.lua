@@ -9,7 +9,7 @@ config.PLAYER_PATH = "/hud/player"
 config.CACHE_TTL_SEC = 15
 config.FILTER_CACHE_TTL_SEC = 90
 
---- Slugs Convex/telemetry si sim.serverName no resuelve (ej. "server-1").
-config.SERVER_SLUG_FALLBACKS = {}
+--- Optional display-name fallbacks if race.ini / sim lack SERVER_NAME.
+config.SERVER_NAME_FALLBACKS = { "ProjectD" }
 
 return config
