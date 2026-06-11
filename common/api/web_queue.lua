@@ -2,6 +2,7 @@
 
 local state = require("common.api.state")
 local util = require("common.api.util")
+local http_client = require("common.api.http_client")
 
 local web_queue = {}
 
@@ -70,31 +71,13 @@ function web_queue.pump()
     state.last_fetch_url = item.url
     state.last_fetch_kind = item.kind or ""
 
-    if web == nil or web.get == nil then
+    log_event(item.kind .. " start", item.url)
+    if not http_client.dispatch(item.url, item, web_queue.pump) then
         state.web_inflight = nil
+        state.web_inflight_started_at = 0
+        state.last_http_transport = "none"
         log_event(item.kind .. " fail", "web_unavailable")
         item.callback("web_unavailable", nil)
-        web_queue.pump()
-        return
-    end
-
-    log_event(item.kind .. " start", item.url)
-    local ok, err_call = pcall(web.get, item.url, function(a, b)
-        state.web_inflight = nil
-        local err, response = util.normalize_web_response(a, b)
-        local code = util.http_status_code(response)
-        if util.is_web_error(err) then
-            log_event(item.kind .. " err", tostring(err))
-        else
-            log_event(item.kind .. " ok", "http=" .. tostring(code or "?"))
-        end
-        item.callback(err, response)
-        web_queue.pump()
-    end)
-    if not ok then
-        state.web_inflight = nil
-        log_event(item.kind .. " throw", tostring(err_call))
-        item.callback(tostring(err_call), nil)
         web_queue.pump()
     end
 end

@@ -13,6 +13,34 @@ local sync = require("common.api.sync")
 
 local fetch = {}
 
+local function current_api_base()
+    local override = util.sanitize_param(state.api_base_storage:get())
+    if override ~= "" then return override end
+    local urls = config.API_BASE_URLS or { config.API_BASE_URL }
+    local idx = state.api_base_index or 1
+    if idx < 1 or idx > #urls then idx = 1 end
+    return urls[idx]
+end
+
+local function rotate_api_base()
+    local urls = config.API_BASE_URLS or { config.API_BASE_URL }
+    if #urls <= 1 then return false end
+    state.api_base_index = ((state.api_base_index or 1) % #urls) + 1
+    return true
+end
+
+local function skip_plans_for_current_server()
+    local plan = state.last_fetch_plan
+    if plan == nil or state.fetch_plans == nil then return end
+    local key = string.lower(util.safe_str(plan.server_name))
+    while state.fetch_attempt < #state.fetch_plans do
+        local next_plan = state.fetch_plans[state.fetch_attempt + 1]
+        if next_plan == nil then break end
+        if string.lower(util.safe_str(next_plan.server_name)) ~= key then break end
+        state.fetch_attempt = state.fetch_attempt + 1
+    end
+end
+
 local function finish_fetch_lock()
     sync.release_fetch_lock()
     sync.publish_meta()
@@ -23,16 +51,15 @@ local function safe_web_get(url, kind, callback)
 end
 
 local function profile_fetch_url(ctx, server_name)
-    return string.format(
-        "%s%s?steamId=%s&serverName=%s&track=%s&trackConfig=%s&carModel=%s",
-        config.API_BASE_URL,
-        config.PLAYER_PATH or "/hud/player",
-        util.url_encode(ctx.player_steam_id),
-        util.url_encode(server_name),
-        util.url_encode(ctx.track_id),
-        util.url_encode(ctx.layout_id),
-        util.url_encode(ctx.car_id)
-    )
+    local steam_id = util.sanitize_param(ctx.player_steam_id)
+    return util.build_query_url(current_api_base(), config.PLAYER_PATH or "/hud/player", {
+        { "steamId", steam_id },
+        { "steamIds", steam_id },
+        { "serverName", server_name },
+        { "track", ctx.track_id },
+        { "trackConfig", ctx.layout_id },
+        { "carModel", ctx.car_id },
+    })
 end
 
 local function profile_server_list(ctx)
@@ -195,17 +222,16 @@ function fetch.start_profile_fetch(ctx, force_new_cycle, chain_next)
 end
 
 local function session_url(ctx, plan, car_filter)
-    return string.format(
-        "%s%s?steamIds=%s&serverName=%s&track=%s&trackConfig=%s&carFilter=%s&carModel=%s",
-        config.API_BASE_URL,
-        config.SESSION_PATH,
-        util.url_encode(ctx.player_steam_id),
-        util.url_encode(plan.server_name),
-        util.url_encode(plan.track_id),
-        util.url_encode(plan.layout_id),
-        util.url_encode(car_filter),
-        util.url_encode(ctx.car_id)
-    )
+    local steam_id = util.sanitize_param(ctx.player_steam_id)
+    return util.build_query_url(current_api_base(), config.SESSION_PATH, {
+        { "steamIds", steam_id },
+        { "steamId", steam_id },
+        { "serverName", plan.server_name },
+        { "track", plan.track_id },
+        { "trackConfig", plan.layout_id },
+        { "carFilter", car_filter },
+        { "carModel", ctx.car_id },
+    })
 end
 
 local function run_scheduled_filter_fetch(ctx)
@@ -301,6 +327,9 @@ function fetch.start_fetch(ctx, car_filter, force_new_cycle)
         end
 
         if api_reason == "network_error" then
+            if rotate_api_base() then
+                state.fetch_attempt = math.max(0, state.fetch_attempt - 1)
+            end
             retry_or_finish("network_error")
             return
         end
@@ -308,6 +337,9 @@ function fetch.start_fetch(ctx, car_filter, force_new_cycle)
         if api_reason ~= nil and api_reason ~= "" then
             if raw ~= nil and raw.ok == false then
                 api_reason = tostring(raw.reason or raw.error or api_reason)
+            end
+            if api_reason == "server_not_found" then
+                skip_plans_for_current_server()
             end
             if retryable_api_reason(api_reason) then
                 retry_or_finish(api_reason)

@@ -3,6 +3,9 @@
 local config = {}
 
 config.API_BASE_URL = "http://176.57.150.251:3000"
+config.API_BASE_URLS = {
+    "http://176.57.150.251:3000",
+}
 config.SESSION_PATH = "/hud/session"
 config.PLAYER_PATH = "/hud/player"
 config.CACHE_TTL_SEC = 10

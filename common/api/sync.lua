@@ -123,6 +123,13 @@ function sync.pull_bundle()
         context = data.context,
         profile = data.profile,
         leaderboard = data.leaderboard,
+        entries = data.entries,
+        filters = data.filters,
+        title = data.title,
+        map = data.map,
+        layout = data.layout,
+        track_name = data.track_name,
+        layout_name = data.layout_name,
     }
     bundle.apply_bundle(merged, car_filter)
     state.local_sync_ver = ver

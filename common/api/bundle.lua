@@ -3,6 +3,7 @@
 local config = require("common.config")
 local state = require("common.api.state")
 local profile = require("common.api.profile")
+local parse = require("common.api.parse")
 
 local bundle = {}
 
@@ -76,6 +77,7 @@ function bundle.apply_bundle(data, car_filter)
     if data == nil or data.ok ~= true then return false end
 
     car_filter = car_filter or "global"
+    data.leaderboard = parse.coalesce_leaderboard(data)
     local prev_profile = profile.coalesce_profile(state.cached_bundle and state.cached_bundle.profile)
     if profile.coalesce_profile(data.profile) == nil and prev_profile ~= nil then
         data.profile = prev_profile

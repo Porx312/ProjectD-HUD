@@ -3,13 +3,14 @@
 Dt = 0
 Time = 0
 
-local top5 = require("top5.first")
+local top10 = require("top10.first")
 local profile = require("profile.first")
 local rival = require("rival.first")
 local theme = require("common.theme")
 
 local init = false
-local filter_storage = ac.storage("ProjectD-HUD:top5_filter", "global")
+local filter_storage = ac.storage("ProjectD-HUD:top10_filter", "")
+local legacy_filter_storage = ac.storage("ProjectD-HUD:top5_filter", "global")
 
 local function safe_main(mod, dt, label)
     local ok, err = pcall(mod.main, dt)
@@ -40,7 +41,7 @@ local function session_start()
         local data = require("common.data")
         if data.on_session_start ~= nil then data.on_session_start() end
     end)
-    top5.on_session_start()
+    top10.on_session_start()
     profile.on_session_start()
     rival.on_session_start()
 end
@@ -56,21 +57,27 @@ function script.update(dt)
             local data = require("common.data")
             if data.init ~= nil then data.init() end
         end)
-        pcall(top5.init)
+        pcall(top10.init)
         pcall(profile.init)
         pcall(rival.init)
     end
 
     pcall(function()
         local data = require("common.data")
-        if data.run_tick ~= nil then data.run_tick(filter_storage:get())
-        elseif data.tick ~= nil then data.tick(filter_storage:get()) end
+        local filt = filter_storage:get()
+        if filt == nil or filt == "" then filt = legacy_filter_storage:get() or "global" end
+        if data.run_tick ~= nil then data.run_tick(filt)
+        elseif data.tick ~= nil then data.tick(filt) end
     end)
 end
 
-function top5Main(dt) safe_main(top5, dt, "top5") end
-function top5Show() ensure_data_ready(); top5.on_open() end
-function top5Hide() top5.on_close() end
+function top10Main(dt) safe_main(top10, dt, "top10") end
+function top10Show() ensure_data_ready(); top10.on_open() end
+function top10Hide() top10.on_close() end
+
+function top5Main(dt) top10Main(dt) end
+function top5Show() top10Show() end
+function top5Hide() top10Hide() end
 
 function profileMain(dt) safe_main(profile, dt, "profile") end
 function profileShow() ensure_data_ready(); profile.on_open() end

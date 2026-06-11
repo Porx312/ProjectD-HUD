@@ -79,14 +79,23 @@ function images.request_avatar(url)
     avatar_loading[url] = true
 
     local ok_wq, web_queue = pcall(require, "common.api.web_queue")
+    local ok_util, util = pcall(require, "common.api.util")
     local function on_avatar(err, response)
         avatar_loading[url] = false
-        if err ~= nil or response == nil or response.status ~= 200 then
+        if ok_util and util ~= nil then
+            err, response = util.normalize_web_response(err, response)
+        end
+        if ok_util and util ~= nil and util.is_web_error(err) then
             avatar_textures[url] = false
             return
         end
+        if response == nil or not (ok_util and util ~= nil and util.http_response_ok(response)) then
+            avatar_textures[url] = false
+            return
+        end
+        local body = ok_util and util ~= nil and util.response_body(response) or response.body
         local ok, tex = pcall(function()
-            return ui.decodeImage(response.body)
+            return ui.decodeImage(body)
         end)
         if ok and tex ~= nil then
             avatar_textures[url] = tex

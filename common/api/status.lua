@@ -69,6 +69,9 @@ function status.get_status_message(kind)
         local n = st.ui_row_count or st.entry_count or 0
         if kind == "leaderboard" and n > 0 then return nil end
         if kind == "leaderboard" and n == 0 and not state.fetch_pending then
+            if state.cached_filter ~= nil and state.cached_filter ~= "global" then
+                return "No times for this car"
+            end
             return "No times on this track"
         end
         if kind == "profile" and bundled_profile ~= nil then return nil end
@@ -115,7 +118,9 @@ function status.get_status_message(kind)
     if state.last_error == "profile_timeout" then return "Profile timeout — retrying" end
     if state.last_error == "session_timeout" then return "API timeout — check connection" end
     if state.last_error == "context_error" then return "AC context error" end
-    if state.last_error == "server_not_found" then return "Server not found — set ProjectD-HUD:server_name" end
+    if state.last_error == "server_not_found" then
+        return "API: server not found (check url= / body= in debug)"
+    end
     if state.last_error == "track_not_found" then return "Track not found" end
     if state.last_error ~= nil and string.sub(state.last_error, 1, 4) == "http" then
         local hint = util.safe_str(state.last_api_reason)
@@ -164,8 +169,17 @@ function status.get_diag_lines()
         "track=" .. util.safe_str(ctx.track_id) .. "/" .. util.safe_str(ctx.layout_id),
         "full=" .. util.safe_str(ctx.track_full_id),
         "car=" .. util.safe_str(ctx.car_id),
+        "mode=api",
         "http=" .. tostring(st.http_status),
+        "transport=" .. util.safe_str(state.last_http_transport),
         "api=" .. util.safe_str(state.last_api_reason),
+        "body=" .. util.safe_str(state.last_response_snip),
+        "api_base=" .. util.safe_str((function()
+            local override = state.api_base_storage:get()
+            if util.safe_str(override) ~= "" then return override end
+            local urls = require("common.config").API_BASE_URLS or {}
+            return urls[state.api_base_index or 1] or require("common.config").API_BASE_URL
+        end)()),
         "try_srv=" .. util.safe_str(state.last_fetch_plan and state.last_fetch_plan.server_name),
         "try_track=" .. util.safe_str(state.last_fetch_plan and state.last_fetch_plan.track_id)
             .. "/" .. util.safe_str(state.last_fetch_plan and state.last_fetch_plan.layout_id),

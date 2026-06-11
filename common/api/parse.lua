@@ -7,6 +7,36 @@ local profile = require("common.api.profile")
 
 local parse = {}
 
+--- ac-data may return entries at top level (redis top10) or under leaderboard (session bundle).
+function parse.coalesce_leaderboard(data)
+    if data == nil or type(data) ~= "table" then return nil end
+
+    local lb = data.leaderboard
+    if type(lb) ~= "table" then lb = nil end
+
+    if lb == nil and (data.entries ~= nil or data.filters ~= nil) then
+        lb = {
+            title = data.title or "Top 10",
+            map = data.map or data.track_name or "",
+            layout = data.layout or data.layout_name or "",
+            filters = data.filters or {},
+            entries = data.entries or {},
+        }
+    end
+
+    if type(lb) == "table" then
+        if lb.entries == nil and data.entries ~= nil then
+            lb.entries = data.entries
+        end
+        if (lb.filters == nil or #lb.filters == 0) and data.filters ~= nil then
+            lb.filters = data.filters
+        end
+        if lb.title == nil or lb.title == "" then lb.title = "Top 10" end
+    end
+
+    return lb
+end
+
 local function iter_players(players)
     local list = {}
     if players == nil or type(players) ~= "table" then return list end
@@ -47,10 +77,12 @@ function parse.normalize_session_response(data, steam_id)
     local player_list = iter_players(data.players)
     state.last_session_had_players = #player_list > 0
 
+    local leaderboard = parse.coalesce_leaderboard(data)
+
     local out = {
         ok = true,
         context = data.context,
-        leaderboard = data.leaderboard,
+        leaderboard = leaderboard,
         profile = profile.coalesce_profile(data.profile),
     }
 
@@ -81,28 +113,53 @@ function parse.count_ui_entries(list)
     return util.count_ui_rows(parse.copy_entries(list))
 end
 
+local function entry_sort_key(key, entry, fallback)
+    if type(entry) == "table" and entry.rank ~= nil then
+        return tonumber(entry.rank) or fallback
+    end
+    local n = tonumber(key)
+    if n ~= nil then return n end
+    return fallback
+end
+
 function parse.copy_entries(list)
     local out = {}
-    if list == nil then return out end
+    if list == nil or type(list) ~= "table" then return out end
 
-    local function add(entry)
-        if type(entry) ~= "table" then return end
-        local i = 0
-        while out[i] ~= nil do i = i + 1 end
-        out[i] = {
-            rank = entry.rank or 0,
+    local sorted = {}
+    local n = 0
+    for key, entry in pairs(list) do
+        if type(entry) == "table" then
+            n = n + 1
+            sorted[n] = {
+                key = key,
+                entry = entry,
+                order = entry_sort_key(key, entry, n),
+            }
+        end
+    end
+
+    if n == 0 then return out end
+
+    table.sort(sorted, function(a, b)
+        if a.order ~= b.order then return a.order < b.order end
+        local ka = tonumber(a.key) or 0
+        local kb = tonumber(b.key) or 0
+        return ka < kb
+    end)
+
+    for i, item in ipairs(sorted) do
+        local entry = item.entry
+        out[i - 1] = {
+            rank = tonumber(entry.rank) or i,
             name = entry.name or "?",
             tier = tonumber(entry.tier) or 0,
-            lap_ms = entry.lap_ms or entry.best_lap_ms or 0,
+            lap_ms = tonumber(entry.lap_ms or entry.best_lap_ms) or 0,
             car_name = entry.car_name or "",
             avatar_url = entry.avatar_url,
         }
     end
 
-    for _, entry in ipairs(list) do add(entry) end
-    if out[0] == nil then
-        for _, entry in pairs(list) do add(entry) end
-    end
     return out
 end
 

@@ -1,4 +1,4 @@
---[[ ProjectD — Top 10 del servidor (template, datos falsos) ]]
+--[[ ProjectD — Top 10 del servidor (API live o mocks) ]]
 
 local theme = require("common.theme")
 local layout = require("common.layout")
@@ -10,8 +10,20 @@ local hud_debug = require("common.hud_debug")
 local mod = {}
 
 local selected_filter = "global"
-local filter_storage = ac.storage("ProjectD-HUD:top5_filter", "global")
+local filter_storage = ac.storage("ProjectD-HUD:top10_filter", "")
+local legacy_filter_storage = ac.storage("ProjectD-HUD:top5_filter", "global")
 local avatars_prefetched_for = ""
+
+local function read_stored_filter()
+    local v = filter_storage:get()
+    if v ~= nil and v ~= "" then return v end
+    return legacy_filter_storage:get() or "global"
+end
+
+local function store_filter(id)
+    filter_storage:set(id)
+    legacy_filter_storage:set(id)
+end
 
 local function normalize_filter(id)
     if id == nil or id == "" then return "global" end
@@ -21,9 +33,24 @@ local function normalize_filter(id)
     return "global"
 end
 
+local function filter_has_rows(car_filter)
+    local rows = data.get_top10(car_filter)
+    return rows[0] ~= nil
+end
+
+local function pick_startup_filter()
+    local stored = normalize_filter(read_stored_filter())
+    if filter_has_rows(stored) then return stored end
+    if stored ~= "global" and filter_has_rows("global") then
+        return "global"
+    end
+    return stored
+end
+
 function mod.init()
     images.init()
-    selected_filter = normalize_filter(filter_storage:get())
+    selected_filter = pick_startup_filter()
+    store_filter(selected_filter)
 end
 
 function mod.prefetch_avatars()
@@ -38,6 +65,8 @@ end
 
 function mod.on_session_start()
     avatars_prefetched_for = ""
+    selected_filter = pick_startup_filter()
+    store_filter(selected_filter)
 end
 
 function mod.on_open() end
@@ -61,7 +90,7 @@ function mod.main(dt)
 
     if picked ~= nil and picked ~= selected_filter then
         selected_filter = picked
-        filter_storage:set(selected_filter)
+        store_filter(selected_filter)
         avatars_prefetched_for = ""
         if data.select_filter ~= nil then
             data.select_filter(selected_filter)
@@ -124,6 +153,9 @@ function mod.main(dt)
         if data.get_status_message ~= nil then
             local custom = data.get_status_message("leaderboard")
             if custom ~= nil then msg = custom end
+        end
+        if selected_filter ~= "global" and msg == "No times on this track" then
+            msg = "No times for this car"
         end
         ui.dwriteDrawText(
             msg, content.name_fs,

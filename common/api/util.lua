@@ -25,18 +25,71 @@ function util.is_web_error(err)
     return true
 end
 
---- CSP allows only 2 concurrent web.get; normalize callback args defensively.
+--- Strip invisible/control chars that Wine sometimes injects into sim strings.
+function util.sanitize_param(value)
+    value = util.safe_str(value)
+    if value == "" then return "" end
+    if string.sub(value, 1, 3) == "\239\187\191" then
+        value = string.sub(value, 4)
+    end
+    value = value:gsub("%c", "")
+    return value:gsub("%s+$", ""):gsub("^%s+", "")
+end
+
+--- CSP allows only 2 concurrent web.get; normalize callback args defensively (Wine varies).
 function util.normalize_web_response(err, response)
+    if type(err) == "number" and response ~= nil then
+        if type(response) == "string" then
+            return nil, { status = err, body = response }
+        end
+        if type(response) == "table" then
+            if response.status == nil then response.status = err end
+            return nil, response
+        end
+    end
+
+    if type(err) == "boolean" then
+        if err == false and util.is_web_error(response) then
+            return response, nil
+        end
+        return nil, response
+    end
+
     if type(err) == "table" and response == nil then
+        if err.status ~= nil or err.body ~= nil or err.ok ~= nil or err.reason ~= nil then
+            return nil, err
+        end
         return nil, err
     end
+
     if type(response) == "string" and err == nil then
         return nil, { status = 200, body = response }
     end
+
     if type(err) == "string" and not util.is_web_error(err) and response == nil then
         return nil, { status = 200, body = err }
     end
+
+    if type(err) == "string" and util.is_web_error(err) and type(response) == "table" then
+        return err, response
+    end
+
     return err, response
+end
+
+function util.response_snippet(response, max_len)
+    max_len = max_len or 72
+    local body = util.response_body(response)
+    body = util.safe_str(body)
+    if body == "" and type(response) == "table" then
+        body = util.safe_str(response.reason or response.error)
+    end
+    if body == "" then return "" end
+    body = body:gsub("%s+", " ")
+    if #body > max_len then
+        return string.sub(body, 1, max_len - 3) .. "..."
+    end
+    return body
 end
 
 function util.http_status_code(response)
@@ -148,11 +201,26 @@ function util.url_encode(str)
 end
 
 function util.normalize_server_name(name)
-    name = util.safe_str(name)
+    name = util.sanitize_param(name)
     if name == "" then return "" end
     name = name:gsub("[%s%p]*[ℹiI]%d+%s*$", "")
     name = name:gsub("%s+$", "")
     return name
+end
+
+function util.build_query_url(base_url, path, ordered_params)
+    local parts = {}
+    for _, pair in ipairs(ordered_params or {}) do
+        local key = util.safe_str(pair[1])
+        local value = util.sanitize_param(pair[2])
+        if key ~= "" and value ~= "" then
+            parts[#parts + 1] = util.url_encode(key) .. "=" .. util.url_encode(value)
+        end
+    end
+    if #parts == 0 then
+        return util.safe_str(base_url) .. util.safe_str(path)
+    end
+    return util.safe_str(base_url) .. util.safe_str(path) .. "?" .. table.concat(parts, "&")
 end
 
 function util.count_table_entries(list)

@@ -248,13 +248,42 @@ end
 
 
 
+local function list_filters(filters)
+    local out = {}
+    if filters == nil or type(filters) ~= "table" then return out end
+    for _, f in ipairs(filters) do
+        if type(f) == "table" then out[#out + 1] = f end
+    end
+    if #out == 0 then
+        for _, f in pairs(filters) do
+            if type(f) == "table" then out[#out + 1] = f end
+        end
+    end
+    return out
+end
+
+local function ensure_global_filter(filters)
+    local listed = list_filters(filters)
+    if #listed == 0 then
+        return { { id = "global", label = "Global ranking" } }
+    end
+    for _, f in ipairs(listed) do
+        if f.id == "global" then return listed end
+    end
+    local out = { { id = "global", label = "Global ranking" } }
+    for _, f in ipairs(listed) do
+        out[#out + 1] = f
+    end
+    return out
+end
+
 function api.get_leaderboard_filters()
 
     api.hydrate()
 
     if state.known_filters ~= nil and #state.known_filters > 0 then
 
-        return state.known_filters
+        return ensure_global_filter(state.known_filters)
 
     end
 
@@ -262,7 +291,7 @@ function api.get_leaderboard_filters()
 
         local filters = state.cached_bundle.leaderboard.filters
 
-        if #filters > 0 then return filters end
+        if #filters > 0 then return ensure_global_filter(filters) end
 
     end
 
@@ -344,13 +373,17 @@ function api.get_top10(car_filter)
 
     if leaderboard ~= nil then
 
-        return parse.copy_entries(leaderboard.entries)
+        local lb = parse.coalesce_leaderboard({ leaderboard = leaderboard })
+
+        return parse.copy_entries(lb and lb.entries or leaderboard.entries)
 
     end
 
     if state.cached_bundle ~= nil and state.cached_bundle.leaderboard ~= nil and state.cached_filter == car_filter then
 
-        return parse.copy_entries(state.cached_bundle.leaderboard.entries)
+        local lb = parse.coalesce_leaderboard(state.cached_bundle)
+
+        return parse.copy_entries(lb and lb.entries or state.cached_bundle.leaderboard.entries)
 
     end
 
@@ -471,6 +504,12 @@ function api.reset_session_state()
     state.last_fetch_plan = nil
 
     state.last_api_reason = ""
+
+    state.last_http_transport = ""
+
+    state.last_response_snip = ""
+
+    state.api_base_index = 1
 
     state.profile_server_candidates = nil
 

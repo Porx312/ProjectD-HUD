@@ -71,6 +71,7 @@ function layout.profile_metrics(panel_size)
 end
 
 layout.SIZE = {
+    top10   = vec2(300, 554),
     top5    = vec2(300, 554),
     profile = vec2(280, 84),
     rival   = vec2(280, 84),
