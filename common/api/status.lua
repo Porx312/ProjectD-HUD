@@ -1,0 +1,117 @@
+--[[ User-facing status messages and debug overlay lines. ]]
+
+local state = require("common.api.state")
+local util = require("common.api.util")
+local steam = require("common.api.steam")
+local context = require("common.api.context")
+local profile = require("common.api.profile")
+local bundle = require("common.api.bundle")
+
+local status = {}
+
+local function profile_missing_message()
+    if state.profile_fetch_pending then return "Loading profile..." end
+    if state.last_error == "user_not_found" then
+        return "Link Steam in ProjectD"
+    end
+    if state.last_error == "missing_steam" then return "Waiting for Steam ID" end
+    if state.last_error == "network_error" then return "Network error (profile)" end
+    if state.last_error == "server_not_found" then return "Server not found" end
+    if state.last_error == "profile_unavailable" then return "Profile unavailable" end
+    if state.last_error ~= nil and string.sub(state.last_error, 1, 4) == "http" then
+        return "Profile unavailable"
+    end
+    if state.last_error ~= nil then return tostring(state.last_error) end
+    if state.fetch_pending then return "Loading profile..." end
+    if bundle.bundle_needs_profile() and not state.profile_candidates_exhausted then
+        return "Loading profile..."
+    end
+    return "Profile unavailable"
+end
+
+function status.get_status()
+    local ok, ctx = pcall(context.read_session_context)
+    if not ok then ctx = {} end
+    return {
+        loading = state.fetch_pending,
+        error = state.last_error,
+        http_status = state.last_http_status,
+        has_bundle = state.cached_bundle ~= nil,
+        entry_count = state.cached_bundle
+            and state.cached_bundle.leaderboard
+            and state.cached_bundle.leaderboard.entries
+            and #state.cached_bundle.leaderboard.entries
+            or 0,
+        steam_id = util.safe_str(ctx.player_steam_id),
+        server_name = util.safe_str(ctx.server_name),
+        track_id = util.safe_str(ctx.track_id),
+        layout_id = util.safe_str(ctx.layout_id),
+        context_ready = context.context_is_ready(ctx),
+    }
+end
+
+function status.get_status_message(kind)
+    local st = status.get_status()
+    if st.loading then return "Loading..." end
+    if st.has_bundle then
+        local n = st.entry_count or 0
+        if kind == "leaderboard" and n > 0 then return nil end
+        if kind == "leaderboard" and n == 0 then return "No times on this track" end
+        if kind == "profile" and profile.coalesce_profile(state.cached_bundle.profile) == nil then
+            return profile_missing_message()
+        end
+        if kind == "rival" then
+            local p = profile.coalesce_profile(state.cached_bundle.profile)
+            if p == nil then return profile_missing_message() end
+            local rank = tonumber(p.rank) or 0
+            if rank == 1 then return "You're #1 — no rival" end
+            if rank == 0 then return "No time yet — no rival" end
+            if p.rival == nil then return "No rival data" end
+        end
+    end
+    if state.last_error == "json_parse_failed" then return "JSON parse error" end
+    if state.last_error == "missing_server_name" then return "No server name" end
+    if state.last_error == "missing_steam" then return "Waiting for Steam ID" end
+    if state.last_error == "missing_track" then return "Waiting for track" end
+    if state.last_error == "missing_steam_or_track" then return "Waiting for Steam / track" end
+    if state.last_error == "network_error" then return "Network error" end
+    if state.last_error == "context_error" then return "AC context error" end
+    if state.last_error ~= nil and string.sub(state.last_error, 1, 4) == "http" then
+        return "API " .. tostring(state.last_http_status or "?")
+    end
+    if state.last_error ~= nil then return tostring(state.last_error) end
+    if not st.has_bundle then return "Waiting for API..." end
+    return "No data"
+end
+
+function status.get_debug_lines()
+    if not state.is_debug() then return {} end
+    local ok, ctx = pcall(context.read_session_context)
+    if not ok then ctx = {} end
+    local st = status.get_status()
+    return {
+        "steam=" .. util.safe_str(ctx.player_steam_id),
+        "server=" .. util.safe_str(ctx.server_name),
+        "race_server=" .. steam.server_name_from_race_ini(),
+        "race_slug=" .. steam.server_slug_from_race_ini(),
+        "race.ini=" .. steam.steam_from_race_ini(),
+        "bridge=" .. steam.steam_from_online_bridge(),
+        "track=" .. util.safe_str(ctx.track_id) .. "/" .. util.safe_str(ctx.layout_id),
+        "full=" .. util.safe_str(ctx.track_full_id),
+        "car=" .. util.safe_str(ctx.car_id),
+        "http=" .. tostring(st.http_status),
+        "err=" .. tostring(st.error),
+        "bundle=" .. tostring(st.has_bundle),
+        "entries=" .. tostring(st.entry_count),
+        "profile=" .. tostring(profile.coalesce_profile(state.cached_bundle and state.cached_bundle.profile) ~= nil),
+        "rank=" .. tostring(state.cached_bundle and state.cached_bundle.profile and state.cached_bundle.profile.rank or "?"),
+        "rival=" .. tostring(state.cached_bundle ~= nil and state.cached_bundle.profile ~= nil and state.cached_bundle.profile.rival ~= nil),
+        "srv=" .. util.safe_str(state.last_resolved_server_name),
+        "prof_load=" .. tostring(state.profile_fetch_pending),
+        "prof_done=" .. tostring(state.profile_candidates_exhausted),
+        "prof_try=" .. tostring(state.profile_fetch_attempt),
+        "players=" .. tostring(state.last_session_had_players),
+    }
+end
+
+return status
