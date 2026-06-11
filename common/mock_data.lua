@@ -57,16 +57,16 @@ local LEADERBOARDS = {
     },
 
     ["projectd-touge-01@akina@downhill@ae86_trueno"] = {
-        { rank = 1, name = "Takumi Fujiwara",    tier = 9,  lap_ms = 279650, car_name = "Trueno AE86", avatar_url = avatar("Takumi Fujiwara") },
-        { rank = 2, name = "Wataru Akiyoshi",    tier = 8,  lap_ms = 284500, car_name = "Levin AE86",  avatar_url = avatar("Wataru Akiyoshi") },
-        { rank = 3, name = "Bunta Fujiwara",     tier = 10, lap_ms = 285100, car_name = "Trueno AE86", avatar_url = avatar("Bunta Fujiwara") },
-        { rank = 4, name = "Itsuki Takeuchi",    tier = 5,  lap_ms = 292300, car_name = "AE85 Levin",  avatar_url = avatar("Itsuki Takeuchi") },
-        { rank = 5, name = "Koichiro Iketani",   tier = 5,  lap_ms = 298400, car_name = "S13 Silvia",  avatar_url = avatar("Koichiro Iketani") },
-        { rank = 6, name = "Kai Kogashiwa",      tier = 9,  lap_ms = 299800, car_name = "86 GT",       avatar_url = avatar("Kai Kogashiwa") },
-        { rank = 7, name = "Nobuhiko Ueo",       tier = 8,  lap_ms = 301500, car_name = "Civic EG6",   avatar_url = avatar("Nobuhiko Ueo") },
-        { rank = 8, name = "Mako Sato",          tier = 7,  lap_ms = 303200, car_name = "SilEighty",   avatar_url = avatar("Mako Sato") },
-        { rank = 9, name = "Seiji Iwaki",        tier = 6,  lap_ms = 305800, car_name = "Evo IV",      avatar_url = avatar("Seiji Iwaki") },
-        { rank = 10, name = "Tomoyuki Tachi",    tier = 6,  lap_ms = 307500, car_name = "Evo V",       avatar_url = avatar("Tomoyuki Tachi") },
+        { rank = 1, name = "Bunta Fujiwara",     tier = 10, lap_ms = 278900, car_name = "Trueno AE86", avatar_url = avatar("Bunta Fujiwara") },
+        { rank = 2, name = "Takumi Fujiwara",    tier = 9,  lap_ms = 279650, car_name = "Trueno AE86", avatar_url = avatar("Takumi Fujiwara") },
+        { rank = 3, name = "Wataru Akiyoshi",    tier = 8,  lap_ms = 284500, car_name = "Levin AE86",  avatar_url = avatar("Wataru Akiyoshi") },
+        { rank = 4, name = "Tomoyuki Tachi",     tier = 6,  lap_ms = 285100, car_name = "Evo V",       avatar_url = avatar("Tomoyuki Tachi") },
+        { rank = 5, name = "Itsuki Takeuchi",    tier = 5,  lap_ms = 292300, car_name = "AE85 Levin",  avatar_url = avatar("Itsuki Takeuchi") },
+        { rank = 6, name = "Koichiro Iketani",   tier = 5,  lap_ms = 298400, car_name = "S13 Silvia",  avatar_url = avatar("Koichiro Iketani") },
+        { rank = 7, name = "Kai Kogashiwa",      tier = 9,  lap_ms = 299800, car_name = "86 GT",       avatar_url = avatar("Kai Kogashiwa") },
+        { rank = 8, name = "Nobuhiko Ueo",       tier = 8,  lap_ms = 301500, car_name = "Civic EG6",   avatar_url = avatar("Nobuhiko Ueo") },
+        { rank = 9, name = "Mako Sato",          tier = 7,  lap_ms = 303200, car_name = "SilEighty",   avatar_url = avatar("Mako Sato") },
+        { rank = 10, name = "Seiji Iwaki",       tier = 6,  lap_ms = 305800, car_name = "Evo IV",      avatar_url = avatar("Seiji Iwaki") },
     },
 
     ["projectd-touge-01@akina@downhill@rx7_fc"] = {
@@ -166,15 +166,34 @@ function mock.get_top5(car_filter)
     return mock.get_top10(car_filter)
 end
 
+--- Leaderboard del coche actual (mismo auto que conduces en pista).
+local function car_leaderboard_entries()
+    local ctx = mock.MOCK_CONTEXT
+    return mock.get_top10(ctx.car_id)
+end
+
 function mock.get_player_profile()
     local ctx = mock.MOCK_CONTEXT
     local p = PROFILES[ctx.player_steam_id]
     if p == nil then return nil end
+
+    local rank, tier, best_lap_ms = p.rank, p.tier, p.best_lap_ms
+    local rows = car_leaderboard_entries()
+    for i = 0, 9 do
+        local e = rows[i]
+        if e ~= nil and e.name == p.name then
+            rank = e.rank
+            tier = e.tier
+            best_lap_ms = e.lap_ms
+            break
+        end
+    end
+
     return {
         name = p.name,
-        rank = p.rank,
-        tier = p.tier,
-        best_lap_ms = p.best_lap_ms,
+        rank = rank,
+        tier = tier,
+        best_lap_ms = best_lap_ms,
         car_name = ctx.car_name,
         car_id = ctx.car_id,
         avatar_url = p.avatar_url,
@@ -182,13 +201,21 @@ function mock.get_player_profile()
     }
 end
 
+function mock.tick() end
+
+function mock.get_status_message(kind)
+    if kind == "profile" then return "No profile data" end
+    if kind == "rival" then return "No rival data" end
+    return "No data"
+end
+
 function mock.get_rival()
     local profile = mock.get_player_profile()
     if profile == nil or profile.rank <= 1 then return nil end
 
-    local top5 = mock.get_top5("global")
-    for i = 0, 4 do
-        local e = top5[i]
+    local rows = car_leaderboard_entries()
+    for i = 0, 9 do
+        local e = rows[i]
         if e ~= nil and e.rank == profile.rank - 1 then
             return {
                 name = e.name,

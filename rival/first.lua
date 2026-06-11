@@ -1,7 +1,7 @@
 --[[ ProjectD — Rival (jugador #rank-1, template) ]]
 
 local theme = require("common.theme")
-local mock = require("common.mock_data")
+local data = require("common.data")
 local draw = require("common.draw")
 local images = require("common.images")
 
@@ -9,7 +9,8 @@ local mod = {}
 
 function mod.init()
     images.init()
-    local r = mock.get_rival()
+    if data.init ~= nil then data.init() end
+    local r = data.get_rival()
     if r ~= nil then
         images.request_avatar(images.resolve_url(r.name, r.avatar_url))
     end
@@ -24,17 +25,24 @@ function mod.on_close() end
 function mod.update() end
 
 function mod.main(dt)
+    if data.tick ~= nil then pcall(data.tick) end
     theme.ensure_fonts()
     local win = ui.windowSize()
 
     draw.card_panel(vec2(0, 0), win)
 
-    local rival = mock.get_rival()
-    local profile = mock.get_player_profile()
+    local rival = data.get_rival()
+    local profile = data.get_player_profile()
 
     if rival == nil then
-        local msg = "You're #1 — no rival"
-        if profile == nil then msg = "No rival data" end
+        local msg = "No rival"
+        if data.get_status_message ~= nil then
+            msg = data.get_status_message("rival")
+        elseif profile == nil then
+            msg = "No rival data"
+        elseif (profile.rank or 0) == 1 then
+            msg = "You're #1 — no rival"
+        end
         ui.pushDWriteFont(theme.fonts.reg)
         local tw = ui.measureDWriteText(msg, 13).x
         ui.dwriteDrawText(msg, 13, vec2((win.x - tw) * 0.5, (win.y - 13) * 0.5), theme.colors.muted)

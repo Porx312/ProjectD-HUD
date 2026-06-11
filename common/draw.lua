@@ -240,6 +240,7 @@ end
 
 function draw.tier_badge(pos, tier, tier_sz)
     theme.ensure_fonts()
+    tier = tonumber(tier) or 0
     local path = images.get_tier_path(tier)
 
     if path ~= nil then

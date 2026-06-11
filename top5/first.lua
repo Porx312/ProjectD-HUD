@@ -2,7 +2,7 @@
 
 local theme = require("common.theme")
 local layout = require("common.layout")
-local mock = require("common.mock_data")
+local data = require("common.data")
 local draw = require("common.draw")
 local images = require("common.images")
 
@@ -13,7 +13,7 @@ local filter_storage = ac.storage("ProjectD-HUD:top5_filter", "global")
 
 local function normalize_filter(id)
     if id == nil or id == "" then return "global" end
-    for _, tab in ipairs(mock.get_leaderboard_filters()) do
+    for _, tab in ipairs(data.get_leaderboard_filters()) do
         if tab.id == id then return id end
     end
     return "global"
@@ -22,11 +22,12 @@ end
 function mod.init()
     images.init()
     selected_filter = normalize_filter(filter_storage:get())
+    if data.init ~= nil then data.init() end
     mod.prefetch_avatars()
 end
 
 function mod.prefetch_avatars()
-    local rows = mock.get_top10(selected_filter)
+    local rows = data.get_top10(selected_filter)
     for i = 0, layout.TOP10_ROW_COUNT - 1 do
         local e = rows[i]
         if e ~= nil then
@@ -44,9 +45,10 @@ function mod.on_close() end
 function mod.update() end
 
 function mod.main(dt)
+    if data.tick ~= nil then pcall(data.tick, selected_filter) end
     theme.ensure_fonts()
     local win = ui.windowSize()
-    local filters = mock.get_leaderboard_filters()
+    local filters = data.get_leaderboard_filters()
     local side_pad = layout.TOP5_PAD
 
     local picked = draw.car_filter_combo(
@@ -59,6 +61,7 @@ function mod.main(dt)
     if picked ~= nil and picked ~= selected_filter then
         selected_filter = picked
         filter_storage:set(selected_filter)
+        if data.fetch_session ~= nil then data.fetch_session(selected_filter, true) end
         mod.prefetch_avatars()
     end
 
@@ -67,11 +70,11 @@ function mod.main(dt)
     local po, ps = draw.leaderboard_panel(panel_origin, panel_size)
     local panel_o = panel_origin + po
 
-    draw.leaderboard_header(panel_o, ps, mock.get_leaderboard_header())
+    draw.leaderboard_header(panel_o, ps, data.get_leaderboard_header())
 
     local content = layout.top5_content(ps)
     local pad = content.pad
-    local rows = mock.get_top10(selected_filter)
+    local rows = data.get_top10(selected_filter)
     local row_count = content.row_count or layout.TOP10_ROW_COUNT
 
     local y = panel_o.y + content.list_top
@@ -106,11 +109,38 @@ function mod.main(dt)
 
     if rows[0] == nil then
         ui.pushDWriteFont(theme.fonts.reg)
+        local msg = "No data"
+        if data.get_status_message ~= nil then
+            local custom = data.get_status_message("leaderboard")
+            if custom ~= nil then msg = custom end
+        end
         ui.dwriteDrawText(
-            "No data", content.name_fs,
+            msg, content.name_fs,
             vec2(panel_o.x + pad + 2, panel_o.y + content.list_top + 2),
             theme.colors.muted
         )
+        if data.get_status ~= nil then
+            local st = data.get_status()
+            local hint = string.format(
+                "srv=%s | steam=%s | http=%s err=%s",
+                tostring(st.server_name ~= "" and st.server_name or "?"),
+                tostring(st.steam_id ~= "" and st.steam_id or "?"),
+                tostring(st.http_status),
+                tostring(st.error)
+            )
+            ui.dwriteDrawText(hint, 10, vec2(panel_o.x + pad + 2, panel_o.y + content.list_top + 22), theme.colors.muted)
+        end
+        ui.popDWriteFont()
+    end
+
+    if data.get_debug_lines ~= nil and data.is_debug ~= nil and data.is_debug() then
+        ui.pushDWriteFont(theme.fonts.reg)
+        local lines = data.get_debug_lines()
+        local dy = win.y - 10
+        for i = #lines, 1, -1 do
+            dy = dy - 11
+            ui.dwriteDrawText(lines[i], 10, vec2(4, dy), theme.colors.muted)
+        end
         ui.popDWriteFont()
     end
 end

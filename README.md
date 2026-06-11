@@ -67,8 +67,19 @@ Edita `common/mock_data.lua`:
 
 ## Pr�ximo paso (API)
 
-Sustituir `mock_data.lua` por llamadas a ProjectD:
+## API en vivo (ProjectD)
 
-- Top 10: `GET /leaderboards/{trackId}/{carId}` + server id
-- Perfil: `GET /drivers/{steamId}/profile`
-- Rival: entrada con `rank - 1` del leaderboard
+Por defecto el HUD usa la API en el VPS (`common/data.lua` → `api_data.lua`):
+
+```
+GET http://176.57.150.251:3000/hud/session
+  ?steamId=&serverName=&track=&trackConfig=&carFilter=&carModel=
+```
+
+- Top 10: `GET /hud/top10?serverName&track&trackConfig&car`
+- Jugador: `GET /hud/player?steamId&serverName&track&trackConfig`
+- Bundle (3 widgets): `GET /hud/session` (incluye `profile.rival`)
+
+URL base en `common/config.lua`. Mocks offline: `ac.storage("ProjectD-HUD:use_api", false):set()`
+
+Docs: `ProjectD/docs/08-hud-api.md`
