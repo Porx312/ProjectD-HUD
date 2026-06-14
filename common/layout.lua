@@ -160,7 +160,7 @@ function layout.top10_content(panel_size)
 
     local name_fs = math.min(17, math.max(12, math.floor(15 * scale * rh)))
     local sub_fs = math.min(14, math.max(11, math.floor(13 * scale * rh)))
-    local time_fs = math.min(20, math.max(name_fs + 1, math.floor(name_fs * 1.12)))
+    local time_fs = math.min(18, math.max(10, math.floor(name_fs * 0.95)))
     local name_gap = math.max(2, math.floor(3 * rh))
     local avatar = math.floor(row_h * 0.76)
     local tier = math.floor(row_h * 0.64)
