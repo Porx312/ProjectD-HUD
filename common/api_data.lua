@@ -1,5 +1,6 @@
 ﻿--[[ ProjectD HUD — live data from ac-data API. Interface = mock_data.lua ]]
 
+local config = require("common.config")
 local state = require("common.api.state")
 local util = require("common.api.util")
 local context = require("common.api.context")
@@ -14,11 +15,13 @@ local api = {}
 local FILTER_FETCH_COOLDOWN_SEC = 1.0
 
 function api.fetch_session(car_filter, force)
+    state.active_car_filter = car_filter or state.active_car_filter or "global"
     fetch.fetch_session(car_filter, force)
 end
 
 function api.select_filter(car_filter)
     car_filter = car_filter or "global"
+    state.active_car_filter = car_filter
     if bundle.get_filter_leaderboard(car_filter) ~= nil then
         return true
     end
@@ -38,18 +41,40 @@ function api.tick(_car_filter)
 
     local ok_ctx, ctx = pcall(context.read_session_context)
     if ok_ctx then
-        fetch.watchdog_session_fetch(ctx, "global")
-        fetch.watchdog_profile_fetch(ctx)
-    end
+        local ok_step = pcall(function()
+            fetch.watchdog_profile_fetch(ctx)
+            local active_filter = state.active_car_filter or state.cached_filter or "global"
+            fetch.watchdog_session_fetch(ctx, active_filter)
+            fetch.watchdog_version_fetch(ctx, active_filter)
 
-    local ok, err = pcall(api.fetch_session, "global", false)
-    if not ok then
-        state.last_error = "tick_error"
-        return
-    end
-    if ok_ctx then
-        if bundle.bundle_needs_profile() and not state.profile_fetch_pending and not state.fetch_pending then
-            pcall(fetch.start_profile_fetch, ctx, false, false)
+            local ready = context.context_is_ready(ctx)
+            if ready and not state.version_fetch_pending and not state.fetch_pending and not state.profile_fetch_pending then
+                local version_interval = config.VERSION_POLL_INTERVAL_SEC or 3
+                if (now - (state.last_version_poll_at or 0)) >= version_interval then
+                    fetch.start_version_fetch(ctx, false, active_filter)
+                end
+            end
+
+            local backup_interval = config.HUD_CACHE_SYNC_INTERVAL_SEC or 120
+            local refresh_skip = config.HUD_CACHE_SYNC_SKIP_AFTER_REFRESH_SEC or 90
+            if ready
+                and not state.fetch_pending
+                and not state.profile_fetch_pending
+                and not state.version_fetch_pending
+                and (now - (state.last_hud_backup_sync_at or 0)) >= backup_interval
+                and (now - (state.last_hud_refresh_at or 0)) >= refresh_skip then
+                state.last_hud_backup_sync_at = now
+                bundle.clear_filter_cache()
+                fetch.fetch_session(active_filter, true)
+            end
+
+            if bundle.bundle_needs_profile() and not state.profile_fetch_pending and not state.fetch_pending then
+                pcall(fetch.start_profile_fetch, ctx, false, false)
+            end
+        end)
+        if not ok_step then
+            state.last_error = "tick_error"
+            return
         end
     end
 
@@ -209,6 +234,19 @@ function api.reset_session_state()
     state.fetch_car_filter = nil
     state.scheduled_filter_fetch = nil
     state.filter_fetch_at = {}
+    state.last_version_attempt_at = 0
+    state.last_version_poll_at = 0
+    state.last_hud_refresh_at = 0
+    state.last_hud_backup_sync_at = 0
+    state.version_fetch_started_at = 0
+    state.version_fetch_pending = false
+    state.version_fetch_attempt = 0
+    state.version_server_candidates = nil
+    state.hud_version = ""
+    state.hud_lb_version = ""
+    state.hud_player_versions = {}
+    state.version_cache_ok = false
+    state.active_car_filter = "global"
     state.last_server_tried = ""
     state.server_names_tried = nil
     bundle.clear_filter_cache()

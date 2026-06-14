@@ -69,13 +69,15 @@ Edita `common/mock_data.lua`:
 
 ## API en vivo (ProjectD)
 
-Por defecto el HUD usa la API en el VPS (`common/data.lua` → `api_data.lua`):
+Por defecto el HUD usa la API en el VPS (`common/data.lua` → `api_data.lua`).
+Ahora el cliente consulta primero una versión ligera y solo descarga la sesión cuando cambia:
 
 ```
-GET http://176.57.150.251:3000/hud/session
-  ?steamId=&serverName=&track=&trackConfig=&carFilter=&carModel=
+GET http://176.57.150.251:3000/hud/version
+  ?serverName=&track=&steamIds=
 ```
 
+- Si `version` cambia, el HUD llama a `GET /hud/session`
 - Top 10: `GET /hud/top10?serverName&track&trackConfig&car`
 - Jugador: `GET /hud/player?steamId&serverName&track&trackConfig`
 - Bundle (3 widgets): `GET /hud/session` (incluye `profile.rival`)

@@ -56,6 +56,8 @@ function bundle.apply_bundle(data, car_filter)
     state.cached_bundle = data
     state.cached_filter = "global"
     state.cached_at = os.clock()
+    state.last_hud_refresh_at = state.cached_at
+    state.last_hud_backup_sync_at = state.cached_at
     state.fetch_attempt = 0
     state.server_name_candidates = nil
     state.fetch_car_filter = nil
@@ -75,6 +77,8 @@ function bundle.merge_top10(car_filter, raw, leaderboard)
         state.cached_bundle.ok = true
         state.cached_bundle.leaderboard = leaderboard
         state.cached_at = os.clock()
+        state.last_hud_refresh_at = state.cached_at
+        state.last_hud_backup_sync_at = state.cached_at
         state.cached_filter = "global"
         state.fetch_attempt = 0
         state.server_name_candidates = nil

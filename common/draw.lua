@@ -25,6 +25,8 @@ local function measure_dwrite(font, text, size)
     return sz
 end
 
+local leaderboard_car_name
+
 function draw.flat_panel(origin, size)
     ui.drawRectFilled(origin, origin + size, theme.colors.bg, 6, layout.corners_all())
 end
@@ -51,24 +53,12 @@ function draw.leaderboard_panel(win_origin, win_size)
     return po, ps
 end
 
---- Cabecera: "Top 10 Map - Layout - logo" + línea separadora.
+--- Cabecera: "TOP 10" + línea separadora.
 function draw.leaderboard_header(panel_o, panel_size, info)
     theme.ensure_fonts()
     info = info or {}
     local m = layout.leaderboard_header_metrics(panel_size)
     local title = info.title or m.title
-    local map_label = info.map or ""
-    local layout_label = info.layout or ""
-    local sep = " - "
-    local logo_path = images.get_logo()
-    local logo_w = m.logo_h
-
-    if logo_path ~= nil then
-        local ok, sz = pcall(ui.imageSize, logo_path)
-        if ok and sz ~= nil and sz.y > 0 then
-            logo_w = m.logo_h * (sz.x / sz.y)
-        end
-    end
 
     local function text_w(font, text, fs)
         ui.pushDWriteFont(font)
@@ -78,75 +68,13 @@ function draw.leaderboard_header(panel_o, panel_size, info)
     end
 
     local title_fs = m.title_fs
-    local meta_fs = m.meta_fs
-    local sep_fs = meta_fs * 0.82
-
     local title_w = text_w(theme.fonts.bold, title, title_fs)
-    local map_w = map_label ~= "" and text_w(theme.fonts.bold, map_label, meta_fs) or 0
-    local layout_w = layout_label ~= "" and text_w(theme.fonts.reg, layout_label, meta_fs) or 0
-    local sep_w = text_w(theme.fonts.reg, sep, sep_fs)
-
-    local group_w = title_w
-    if map_label ~= "" then
-        group_w = group_w + m.header_gap + map_w
-    end
-    if layout_label ~= "" then
-        group_w = group_w + sep_w + layout_w
-    end
-    if logo_path ~= nil then
-        group_w = group_w + sep_w + logo_w
-    end
-
-    local max_w = panel_size.x - m.header_pad_x * 2
-    if group_w > max_w and group_w > 0 then
-        local shrink = max_w / group_w
-        title_fs = title_fs * shrink
-        meta_fs = meta_fs * shrink
-        sep_fs = sep_fs * shrink
-        logo_w = logo_w * shrink
-        m.logo_h = m.logo_h * shrink
-
-        title_w = text_w(theme.fonts.bold, title, title_fs)
-        map_w = map_label ~= "" and text_w(theme.fonts.bold, map_label, meta_fs) or 0
-        layout_w = layout_label ~= "" and text_w(theme.fonts.reg, layout_label, meta_fs) or 0
-        sep_w = text_w(theme.fonts.reg, sep, sep_fs)
-
-        group_w = title_w
-        if map_label ~= "" then group_w = group_w + m.header_gap + map_w end
-        if layout_label ~= "" then group_w = group_w + sep_w + layout_w end
-        if logo_path ~= nil then group_w = group_w + sep_w + logo_w end
-    end
-
-    local start_x = panel_o.x + (panel_size.x - group_w) * 0.5
+    local start_x = panel_o.x + (panel_size.x - title_w) * 0.5
     local content_h = m.header_h - m.sep_margin_bottom - m.sep_h
-    local row_y = panel_o.y + (content_h - m.logo_h) * 0.5
-    local x = start_x
-
-    local function draw_text(font, text, fs, color)
-        local y = row_y + (m.logo_h - fs) * 0.5
-        ui.pushDWriteFont(font)
-        ui.dwriteDrawText(text, fs, vec2(x, y), color)
-        ui.popDWriteFont()
-        x = x + text_w(font, text, fs)
-    end
-
-    draw_text(theme.fonts.bold, title, title_fs, theme.colors.white)
-
-    if map_label ~= "" then
-        x = x + m.header_gap
-        draw_text(theme.fonts.bold, map_label, meta_fs, theme.colors.accent)
-    end
-
-    if layout_label ~= "" then
-        draw_text(theme.fonts.reg, sep, sep_fs, theme.colors.muted)
-        draw_text(theme.fonts.reg, layout_label, meta_fs, theme.colors.white)
-    end
-
-    if logo_path ~= nil then
-        draw_text(theme.fonts.reg, sep, sep_fs, theme.colors.muted)
-        local logo_y = row_y + (m.logo_h - m.logo_h) * 0.5
-        ui.drawImage(logo_path, vec2(x, row_y), vec2(x + logo_w, row_y + m.logo_h), theme.colors.white)
-    end
+    local row_y = panel_o.y + (content_h - title_fs) * 0.5
+    ui.pushDWriteFont(theme.fonts.bold)
+    ui.dwriteDrawText(title, title_fs, vec2(start_x, row_y), theme.colors.white)
+    ui.popDWriteFont()
 
     local sep_y = panel_o.y + m.header_h - m.sep_h
     local sep_l = panel_o.x + m.sep_margin_x
@@ -313,19 +241,26 @@ function draw.driver_row(origin, entry, opts)
 
     if time_on_name_line and content_w ~= nil then
         local right = origin.x + content_w - trailing_pad
-        local tier_x = right - tier_sz
-        local tier_y = name_y + (name_fs - tier_sz) * 0.5
+        local time_w = measure_text(theme.fonts.medium, time_str, time_fs)
+        local pair_gap = math.max(4, time_gap)
+        local block_w = time_w + pair_gap + tier_sz
+        local block_center_x = origin.x + content_w * 0.82
+        local block_left = math.min(
+            right - block_w,
+            math.max(name_x + avatar_sz + 18, block_center_x - block_w * 0.5)
+        )
+        local time_x = block_left
+        local tier_x = time_x + time_w + pair_gap
+        local tier_y = origin.y + (row_h - tier_sz) * 0.5
         draw.tier_badge(vec2(tier_x, tier_y), entry.tier, tier_sz)
 
         ui.pushDWriteFont(theme.fonts.medium)
-        local time_w = measure_text(theme.fonts.medium, time_str, time_fs)
-        local time_x = tier_x - time_gap - time_w
-        local time_y = name_y + (name_fs - time_fs) * 0.5
+        local time_y = tier_y + (tier_sz - time_fs) * 0.5
         ui.dwriteDrawText(time_str, time_fs, vec2(time_x, time_y), theme.colors.accent)
         ui.popDWriteFont()
 
         ui.pushDWriteFont(theme.fonts.medium)
-        ui.dwriteDrawText(car, sub_fs, vec2(name_x, sub_y), theme.colors.white)
+        ui.dwriteDrawText(leaderboard_car_name(entry), sub_fs, vec2(name_x, sub_y), theme.colors.white)
         ui.popDWriteFont()
     else
         local name_w = measure_text(theme.fonts.bold, name_text, name_fs)
@@ -352,12 +287,54 @@ local function profile_name_text(entry)
     return theme.format_display_name(entry.display_name or entry.name)
 end
 
+local function profile_car_name(entry)
+    local car = entry.car_name
+    if car == nil or car == "" then
+        car = theme.format_car_short(entry.car_name, entry.car_id)
+    end
+
+    car = car:gsub("^%s+", ""):gsub("%s+$", "")
+    car = car:gsub("%s+", " ")
+
+    local first_word = car:match("^(%S+)")
+    if first_word ~= nil and #first_word <= 10 then
+        return first_word
+    end
+
+    if #car <= 10 then
+        return car
+    end
+
+    return car:sub(1, 10)
+end
+
 local function car_line_prefix(entry, opts)
-    local car = theme.format_car_short(entry.car_name, entry.car_id)
+    local car = profile_car_name(entry)
     if opts.show_rank_on_car ~= false and entry.rank ~= nil then
         return "#" .. tostring(entry.rank) .. " " .. car
     end
     return car
+end
+
+leaderboard_car_name = function(entry)
+    local car = entry.car_name
+    if car == nil or car == "" then
+        car = theme.format_car_short(entry.car_name, entry.car_id)
+    end
+
+    car = car:gsub("^%s+", ""):gsub("%s+$", "")
+    car = car:gsub("%s+", " ")
+
+    local first_word = car:match("^(%S+)")
+    if first_word ~= nil and #first_word <= 6 then
+        return first_word
+    end
+
+    if #car <= 6 then
+        return car
+    end
+
+    return car:sub(1, 6)
 end
 
 local function draw_rival_tag(avatar_pos, avatar_size, fs)

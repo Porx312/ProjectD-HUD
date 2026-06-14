@@ -3,6 +3,7 @@
 local theme = require("common.theme")
 local layout = require("common.layout")
 local data = require("common.data")
+local state = require("common.api.state")
 local draw = require("common.draw")
 local images = require("common.images")
 local mod = {}
@@ -22,8 +23,9 @@ end
 
 function mod.init()
     images.init()
-    selected_filter = "global"
-    filter_storage:set("global")
+    selected_filter = normalize_filter(filter_storage:get("global"))
+    filter_storage:set(selected_filter)
+    state.active_car_filter = selected_filter
 end
 
 function mod.prefetch_avatars()
@@ -38,8 +40,9 @@ end
 
 function mod.on_session_start()
     avatars_prefetched_for = ""
-    selected_filter = "global"
-    filter_storage:set("global")
+    selected_filter = normalize_filter(filter_storage:get("global"))
+    filter_storage:set(selected_filter)
+    state.active_car_filter = selected_filter
 end
 
 function mod.on_open() end
@@ -74,10 +77,10 @@ function mod.main(dt)
     local panel_size = vec2(win.x, win.y - layout.TOP10_HEADER_H)
     local po, ps = draw.leaderboard_panel(panel_origin, panel_size)
     local panel_o = panel_origin + po
-
-    draw.leaderboard_header(panel_o, ps, data.get_leaderboard_header())
-
     local content = layout.top10_content(ps)
+
+    draw.leaderboard_header(panel_o, ps, { title = "TOP 10" })
+
     local pad = content.pad
     local rows = data.get_top10(selected_filter)
     local row_count = content.row_count or layout.TOP10_ROW_COUNT

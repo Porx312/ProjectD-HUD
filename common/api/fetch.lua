@@ -196,6 +196,17 @@ local function top10_url(ctx, server_name, car_filter)
     )
 end
 
+local function version_url(ctx, server_name)
+    return string.format(
+        "%s%s?serverName=%s&track=%s&steamIds=%s",
+        config.API_BASE_URL,
+        config.VERSION_PATH or "/hud/version",
+        util.url_encode(server_name),
+        util.url_encode(ctx.track_id),
+        util.url_encode(ctx.player_steam_id)
+    )
+end
+
 local function run_scheduled_filter_fetch(ctx)
     local next_filter = state.scheduled_filter_fetch
     if next_filter == nil or next_filter == "" then return end
@@ -215,6 +226,104 @@ local function should_retry_server(err_reason)
             or err_reason == "http_503" or err_reason == "http_504"
     end
     return false
+end
+
+function fetch.start_version_fetch(ctx, force_new_cycle, car_filter, chain_next)
+    if state.version_fetch_pending then return end
+
+    ctx.player_steam_id = steam.normalize_steam_id(ctx.player_steam_id)
+    if ctx.player_steam_id == "" or util.safe_str(ctx.track_id) == "" then return end
+
+    local now = os.clock()
+    if not chain_next and not force_new_cycle and (now - state.last_version_attempt_at) < (config.VERSION_POLL_INTERVAL_SEC or 3) then
+        return
+    end
+
+    if force_new_cycle or state.version_server_candidates == nil then
+        state.version_server_candidates = context.build_server_name_candidates(ctx)
+        state.version_fetch_attempt = 0
+    end
+
+    if state.version_server_candidates == nil or #state.version_server_candidates == 0 then
+        return
+    end
+
+    state.version_fetch_attempt = state.version_fetch_attempt + 1
+    local server_name = state.version_server_candidates[state.version_fetch_attempt]
+    if server_name == nil then
+        state.version_fetch_attempt = 0
+        state.version_server_candidates = nil
+        return
+    end
+
+    state.version_fetch_pending = true
+    state.version_fetch_started_at = now
+    state.last_version_attempt_at = now
+    state.last_version_poll_at = now
+    local url = version_url(ctx, server_name)
+
+    safe_web_get(url, "version", function(err, response)
+        state.version_fetch_pending = false
+
+        local function try_next(reason)
+            if state.version_fetch_attempt < #state.version_server_candidates then
+                fetch.start_version_fetch(ctx, false, car_filter, true)
+                return
+            end
+            if reason ~= nil and reason ~= "" then
+                state.version_cache_ok = false
+            end
+            state.version_server_candidates = nil
+            state.version_fetch_attempt = 0
+        end
+
+        if util.is_web_error(err) then
+            try_next("network_error")
+            return
+        end
+
+        state.last_http_status = util.http_status_code(response) or state.last_http_status
+        local raw, err_reason, retry_server = util.read_api_response(err, response)
+        if err_reason ~= nil then
+            if (retry_server or should_retry_server(err_reason))
+                and state.version_fetch_attempt < #state.version_server_candidates then
+                fetch.start_version_fetch(ctx, false, car_filter, true)
+                return
+            end
+            try_next(err_reason)
+            return
+        end
+        if raw == nil then
+            try_next("json_parse_failed")
+            return
+        end
+
+        local version = util.safe_str(raw.version)
+        state.version_cache_ok = true
+        state.last_resolved_server_name = server_name
+        state.version_server_candidates = nil
+        state.version_fetch_attempt = 0
+        state.hud_lb_version = util.safe_str(raw.lbVersion)
+        state.hud_player_versions = type(raw.playerVersions) == "table" and raw.playerVersions or {}
+
+        if version == "" then
+            if state.cached_bundle == nil then
+                local active_filter = car_filter or state.active_car_filter or state.cached_filter or "global"
+                bundle.clear_filter_cache()
+                fetch.fetch_session(active_filter, true)
+            end
+            return
+        end
+
+        local changed = version ~= util.safe_str(state.hud_version)
+        state.hud_version = version
+
+        if changed or state.cached_bundle == nil then
+            local active_filter = car_filter or state.active_car_filter or state.cached_filter or "global"
+            bundle.clear_filter_cache()
+            fetch.fetch_session(active_filter, true)
+        end
+    end)
 end
 
 function fetch.start_top10_fetch(ctx, car_filter, force_new_cycle)
@@ -426,6 +535,19 @@ function fetch.fetch_session(car_filter, force)
     state.last_attempt_at = now
 
     fetch.start_top10_fetch(ctx, car_filter, force == true)
+end
+
+function fetch.watchdog_version_fetch(ctx, car_filter)
+    if not state.version_fetch_pending then return end
+    if (os.clock() - state.version_fetch_started_at) < (state.VERSION_FETCH_TIMEOUT_SEC or 12) then return end
+    state.version_fetch_pending = false
+    ac.debug("ProjectD-HUD version", "fetch timeout")
+    if state.version_server_candidates ~= nil and state.version_fetch_attempt < #state.version_server_candidates then
+        fetch.start_version_fetch(ctx, false, car_filter)
+    else
+        state.version_server_candidates = nil
+        state.version_fetch_attempt = 0
+    end
 end
 
 function fetch.watchdog_profile_fetch(ctx)

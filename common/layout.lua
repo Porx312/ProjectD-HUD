@@ -33,10 +33,9 @@ layout.LEADERBOARD_DESIGN = {
     header_h = 204,
     header_pad_x = 48,
     header_gap = 20,
-    title = "Top 10",
+    title = "TOP 10",
     title_fs = 108,
     meta_fs = 92,
-    logo_h = 128,
     sep_h = 2,
     sep_margin_x = 40,
     sep_margin_bottom = 14,
@@ -50,11 +49,11 @@ layout.PANEL_ASPECT = layout.PANEL_NATIVE.x / layout.PANEL_NATIVE.y
 layout.PROFILE_DESIGN = {
     avatar = 465.7,
     name_fs = 188,
-    sub_fs = 132,
+    sub_fs = 104,
     tier = 228,
     avatar_gap = 52,
     name_tier_gap = 38,
-    line_gap = 32,
+    line_gap = 20,
     rival_label_fs = 70,
 }
 
@@ -138,7 +137,6 @@ function layout.leaderboard_header_metrics(panel_size)
         title = d.title,
         title_fs = d.title_fs * s,
         meta_fs = d.meta_fs * s,
-        logo_h = d.logo_h * s,
         sep_h = math.max(1, d.sep_h * s),
         sep_margin_x = d.sep_margin_x * s,
         sep_margin_bottom = d.sep_margin_bottom * s,
@@ -162,7 +160,7 @@ function layout.top10_content(panel_size)
 
     local name_fs = math.min(17, math.max(12, math.floor(15 * scale * rh)))
     local sub_fs = math.min(14, math.max(11, math.floor(13 * scale * rh)))
-    local time_fs = name_fs
+    local time_fs = math.min(20, math.max(name_fs + 1, math.floor(name_fs * 1.12)))
     local name_gap = math.max(2, math.floor(3 * rh))
     local avatar = math.floor(row_h * 0.76)
     local tier = math.floor(row_h * 0.64)
@@ -170,6 +168,7 @@ function layout.top10_content(panel_size)
     local tier_gap = 6
     local time_gap = 6
     local trailing_pad = 8
+    local label_fs = math.max(9, math.floor(10 * scale * rh))
 
     return {
         pad = pad,
@@ -188,6 +187,7 @@ function layout.top10_content(panel_size)
         tier_gap = tier_gap,
         time_gap = time_gap,
         trailing_pad = trailing_pad,
+        label_fs = label_fs,
     }
 end
 

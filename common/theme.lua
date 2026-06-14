@@ -72,14 +72,14 @@ function theme.get_fonts_source()
 end
 
 function theme.format_lap(ms)
-    if ms == nil or ms <= 0 then return "--:--.--" end
+    if ms == nil or ms <= 0 then return "--:--.---" end
     local total_sec = ms / 1000
     local min = math.floor(total_sec / 60)
     local sec = total_sec - min * 60
     if min > 0 then
-        return string.format("%d:%05.2f", min, sec)
+        return string.format("%d:%06.3f", min, sec)
     end
-    return string.format("%.2f", sec)
+    return string.format("0:%06.3f", sec)
 end
 
 --- Código corto de coche para profile/rival (#2 AE86 - 4:39.65).
