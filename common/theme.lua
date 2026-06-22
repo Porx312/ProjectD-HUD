@@ -16,6 +16,11 @@ theme.colors = {
     avatar_fill   = rgbm(0.12, 0.12, 0.15, 1),
     tier_fallback = rgbm(0.85, 0.15, 0.12, 1),
     rival_tag     = rgbm(0.82, 0.12, 0.10, 1),
+    battle_bg     = rgbm(0.03, 0.06, 0.14, 0.92),
+    battle_border = rgbm(1, 1, 1, 0.88),
+    battle_mode_bg = rgbm(0.06, 0.14, 0.32, 0.98),
+    battle_gap_fill = rgbm(0.62, 0.10, 0.14, 0.95),
+    battle_gap_track = rgbm(0.12, 0.04, 0.06, 0.55),
     tab_active    = rgbm(0.35, 0.78, 1.0, 0.38),
     tab_idle      = rgbm(1, 1, 1, 0.08),
 }

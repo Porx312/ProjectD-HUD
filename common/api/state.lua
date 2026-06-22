@@ -60,6 +60,29 @@ local function create_state()
         server_override_storage = ac.storage("ProjectD-HUD:server_name", ""),
         last_server_tried = "",
         server_names_tried = nil,
+
+        battle_version = "",
+        battle_snapshot_raw = nil,
+        battle_ui = nil,
+        battle_version_pending = false,
+        battle_fetch_pending = false,
+        battle_last_poll_at = 0,
+        battle_last_error = nil,
+        battle_server_candidates = nil,
+        battle_fetch_attempt = 0,
+        battle_version_fetch_attempt = 0,
+        battle_result_hold_until = 0,
+        battle_last_event_ts = 0,
+        battle_version_fetch_started_at = 0,
+        battle_fetch_started_at = 0,
+        battle_backoff_until = 0,
+        battle_last_resolved_server_name = nil,
+        battle_last_server_tried = "",
+        battle_event_shown_at = 0,
+
+        BATTLE_FETCH_TIMEOUT_SEC = 12,
+        BATTLE_VERSION_TIMEOUT_SEC = 12,
+        BATTLE_BACKOFF_SEC = 5,
     }
 end
 

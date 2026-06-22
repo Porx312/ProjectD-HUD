@@ -81,6 +81,22 @@ layout.SIZE = {
     top5    = vec2(300, 554),
     profile = vec2(280, 84),
     rival   = vec2(280, 84),
+    battle  = vec2(380, 104),
+}
+
+layout.BATTLE_DESIGN = {
+    main_h = 72,
+    gap_h = 26,
+    gap_overlap = 4,
+    avatar = 46,
+    tier = 18,
+    name_fs = 14,
+    car_fs = 11,
+    mode_fs = 9,
+    score_fs = 22,
+    gap_label_fs = 10,
+    pad = 8,
+    center_w = 108,
 }
 
 --- Alias leaderboard row count.

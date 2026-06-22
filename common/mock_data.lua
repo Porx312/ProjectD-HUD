@@ -230,4 +230,26 @@ function mock.get_rival()
     return nil
 end
 
+--- Battle HUD mock (Ryosuke vs Takumi — preview layout only).
+function mock.get_battle()
+    return {
+        mode = "overtake",
+        score_left = 0,
+        score_right = 0,
+        gap = { current = 170, max = 200 },
+        player_left = {
+            name = "Ryosuke",
+            car_name = "rx7",
+            tier = 10,
+            avatar_url = avatar("Ryosuke Takahashi"),
+        },
+        player_right = {
+            name = "Takumi",
+            car_name = "rx7",
+            tier = 10,
+            avatar_url = avatar("Takumi Fujiwara"),
+        },
+    }
+end
+
 return mock

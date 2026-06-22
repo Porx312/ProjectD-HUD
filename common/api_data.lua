@@ -8,6 +8,7 @@ local profile = require("common.api.profile")
 local parse = require("common.api.parse")
 local bundle = require("common.api.bundle")
 local fetch = require("common.api.fetch")
+local battle_fetch = require("common.api.battle_fetch")
 local status = require("common.api.status")
 
 local api = {}
@@ -71,6 +72,8 @@ function api.tick(_car_filter)
             if bundle.bundle_needs_profile() and not state.profile_fetch_pending and not state.fetch_pending then
                 pcall(fetch.start_profile_fetch, ctx, false, false)
             end
+
+            pcall(battle_fetch.tick, ctx, now)
         end)
         if not ok_step then
             state.last_error = "tick_error"
@@ -210,6 +213,10 @@ function api.get_rival()
     }
 end
 
+function api.get_battle()
+    return battle_fetch.get_battle(os.clock())
+end
+
 function api.reset_session_state()
     state.cached_at = 0
     state.cached_filter = "global"
@@ -250,6 +257,7 @@ function api.reset_session_state()
     state.last_server_tried = ""
     state.server_names_tried = nil
     bundle.clear_filter_cache()
+    battle_fetch.reset()
 end
 
 function api.on_session_start()

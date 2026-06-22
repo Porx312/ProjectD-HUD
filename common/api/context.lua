@@ -123,6 +123,10 @@ function context.context_is_ready(ctx)
         and util.safe_str(ctx.track_id) ~= ""
 end
 
+function context.battle_context_ready(ctx)
+    return ctx ~= nil and steam.normalize_steam_id(ctx.player_steam_id) ~= ""
+end
+
 function context.build_server_name_candidates(ctx)
     local seen, out = {}, {}
     local function push_raw(name)
