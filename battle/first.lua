@@ -1,4 +1,4 @@
---[[ ProjectD — Battle HUD (live ac-data /hud/battle) ]]
+--[[ ProjectD — Battle HUD (live ac-data SSE /hud/battle/stream) ]]
 
 local theme = require("common.theme")
 local data = require("common.data")

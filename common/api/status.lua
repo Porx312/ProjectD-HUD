@@ -99,20 +99,14 @@ function status.get_status_message(kind)
         if state.profile_fetch_pending then return "Loading profile..." end
     elseif kind == "battle" then
         if state.battle_ui ~= nil then return nil end
-        if state.battle_fetch_pending or state.battle_version_pending then
-            return "Loading battle..."
-        end
-        if state.battle_last_error == "battle_unavailable"
-            or state.battle_last_error == "http_502"
+        if state.battle_sse_stream_pending then return "Connecting battle..." end
+        if state.battle_last_error == "http_502"
             or state.battle_last_error == "http_503"
             or state.battle_last_error == "http_504" then
             return "Battle data unavailable"
         end
         if state.battle_last_error == "network_error" then
             return "Network error (battle)"
-        end
-        if state.battle_last_error == "battle_timeout" then
-            return "Battle timeout — retrying"
         end
         if state.battle_last_error == "missing_server_name" then
             return "No server name"

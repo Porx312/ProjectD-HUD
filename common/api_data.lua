@@ -9,6 +9,7 @@ local parse = require("common.api.parse")
 local bundle = require("common.api.bundle")
 local fetch = require("common.api.fetch")
 local battle_fetch = require("common.api.battle_fetch")
+local battle_transport = require("common.api.battle_transport")
 local battle_parse = require("common.api.battle_parse")
 local status = require("common.api.status")
 
@@ -74,7 +75,7 @@ function api.tick(_car_filter)
                 pcall(fetch.start_profile_fetch, ctx, false, false)
             end
 
-            pcall(battle_fetch.tick, ctx, now)
+            pcall(battle_transport.tick, ctx, now)
         end)
         if not ok_step then
             state.last_error = "tick_error"
@@ -247,6 +248,8 @@ function api.reset_session_state()
     state.session_fetch_started_at = 0
     state.profile_fetch_started_at = 0
     state.web_queue = {}
+    state.web_inflight = nil
+    state.web_stream = nil
     state.fetch_car_filter = nil
     state.scheduled_filter_fetch = nil
     state.filter_fetch_at = {}
@@ -266,7 +269,7 @@ function api.reset_session_state()
     state.last_server_tried = ""
     state.server_names_tried = nil
     bundle.clear_filter_cache()
-    battle_fetch.reset()
+    battle_transport.reset()
 end
 
 function api.on_session_start()
