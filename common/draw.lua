@@ -558,6 +558,8 @@ function draw.battle_block(win_origin, win_size, battle)
     local panel_w = win_size.x
     local panel_h = win_size.y
     local state_name = string.lower(tostring(battle.state or "pairing"))
+    local status_name = string.lower(tostring(battle.status or ""))
+    local is_draw = status_name == "draw"
 
     local radius = math.min(panel_h * 0.5 - 0.5, m.main_h * 0.5)
     local main_br = vec2(panel_o.x + panel_w, panel_o.y + m.main_h)
@@ -577,7 +579,7 @@ function draw.battle_block(win_origin, win_size, battle)
         center_fs = 22
     elseif state_name == "launching" then
         center_fs = 18
-    elseif state_name == "finished" or state_name == "cancelled" then
+    elseif state_name == "finished" or state_name == "cancelled" or is_draw then
         center_fs = 11
     end
 
@@ -603,9 +605,9 @@ function draw.battle_block(win_origin, win_size, battle)
     ui.dwriteDrawText(center_text, center_fs, vec2(center_x0 + center_pad_x, center_y0 + center_pad_y), theme.colors.white)
     ui.popDWriteFont()
 
-    if battle.show_scores == true or state_name == "finished" or state_name == "cancelled" then
+    if battle.show_scores == true or state_name == "finished" or state_name == "cancelled" or is_draw then
         local score_text = tostring(battle.score_left or 0) .. " vs " .. tostring(battle.score_right or 0)
-        if state_name == "finished" and battle.winner_name ~= nil and battle.winner_name ~= "" then
+        if state_name == "finished" and not is_draw and battle.winner_name ~= nil and battle.winner_name ~= "" then
             score_text = battle.winner_name .. "  " .. score_text
         end
         ui.pushDWriteFont(theme.fonts.bold)
@@ -616,12 +618,26 @@ function draw.battle_block(win_origin, win_size, battle)
     end
 
     local event_label = tostring(battle.event_label or "")
-    if event_label ~= "" and state_name == "active" then
+    local show_event_toast = event_label ~= ""
+        and (state_name == "active" or state_name == "finished" or state_name == "cancelled" or is_draw)
+    if show_event_toast then
         ui.pushDWriteFont(theme.fonts.medium)
         local ev_w = measure_text(theme.fonts.medium, event_label, 9)
         local ev_y = center_y0 + center_box_h + 2
         ui.dwriteDrawText(event_label, 9, vec2(center_x - ev_w * 0.5, ev_y), theme.colors.accent)
         ui.popDWriteFont()
+    end
+
+    local points_log = battle.points_log
+    if type(points_log) == "table" and #points_log > 0 and state_name == "active" then
+        local feed_label = points_log[#points_log]
+        if feed_label ~= nil and feed_label ~= "" and feed_label ~= event_label then
+            ui.pushDWriteFont(theme.fonts.medium)
+            local feed_w = measure_text(theme.fonts.medium, feed_label, 8)
+            local feed_y = center_y0 + center_box_h + (show_event_toast and 14 or 2)
+            ui.dwriteDrawText(feed_label, 8, vec2(center_x - feed_w * 0.5, feed_y), theme.colors.muted)
+            ui.popDWriteFont()
+        end
     end
 
     if battle.show_gap == true then

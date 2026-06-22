@@ -1,4 +1,4 @@
---[[ HTTP polling for /hud/battle/version and /hud/battle. ]]
+--[[ HTTP polling for /hud/battle/version and /hud/battle (anti-desync). ]]
 
 local config = require("common.config")
 local state = require("common.api.state")
@@ -11,6 +11,13 @@ local battle_parse = require("common.api.battle_parse")
 local battle_fetch = {}
 
 local API_KEY_STORAGE = ac.storage("ProjectD-HUD:api_key", "")
+local DEBUG_STORAGE = ac.storage("ProjectD-HUD:battle_debug", false)
+
+local function battle_debug(msg)
+    if DEBUG_STORAGE:get() then
+        ac.debug("ProjectD-HUD battle", msg)
+    end
+end
 
 local function api_key_suffix()
     local key = util.safe_str(API_KEY_STORAGE:get())
@@ -29,16 +36,36 @@ local function battle_url(path, server_name, steam_id)
     )
 end
 
-local function clear_battle_cache(keep_hold)
-    local now = os.clock()
-    if keep_hold and state.battle_ui ~= nil and now < (state.battle_result_hold_until or 0) then
+local function latch_active(now)
+    now = now or os.clock()
+    return now < (state.battle_result_hold_until or 0)
+        and state.battle_finish_latch_snapshot ~= nil
+end
+
+local function clear_battle_cache(keep_latch)
+    if keep_latch and latch_active(os.clock()) then
         state.battle_snapshot_raw = nil
+        state.battle_ui = nil
         state.battle_version = "0"
+        state.battle_applied_version = ""
+        state.battle_remote_version = "0"
+        battle_debug("clear_battle_cache keep_latch")
         return
     end
     state.battle_snapshot_raw = nil
     state.battle_ui = nil
+    state.battle_finish_latch_snapshot = nil
     state.battle_version = ""
+    state.battle_applied_version = ""
+    state.battle_remote_version = ""
+    state.battle_result_hold_until = 0
+    battle_debug("clear_battle_cache full")
+end
+
+local function reset_battle_session()
+    state.battle_last_event_ts = 0
+    state.battle_event_shown_at = 0
+    state.battle_finish_latch_snapshot = nil
     state.battle_result_hold_until = 0
 end
 
@@ -48,12 +75,14 @@ local function apply_snapshot(raw, local_steam_id, now)
         return
     end
 
-    local prev_state = state.battle_ui ~= nil and state.battle_ui.state or ""
-    local v = util.safe_str(raw.version)
-    state.battle_applied_version = v
-    state.battle_version = v
-    state.battle_remote_version = v
-    state.battle_last_snapshot_at = now
+    local battle_id = util.safe_str(raw.battleId)
+    if battle_id ~= "" and battle_id ~= (state.battle_last_battle_id or "") then
+        if state.battle_last_battle_id ~= nil and state.battle_last_battle_id ~= "" then
+            reset_battle_session()
+            battle_debug("battleId changed -> reset session " .. battle_id)
+        end
+        state.battle_last_battle_id = battle_id
+    end
 
     local ui = battle_parse.to_ui(raw, local_steam_id)
     if ui == nil then
@@ -61,20 +90,49 @@ local function apply_snapshot(raw, local_steam_id, now)
         return
     end
 
+    state.battle_snapshot_raw = raw
+    state.battle_ui = ui
+    state.battle_last_snapshot_at = now
+    state.battle_last_error = nil
+
     local new_event_ts = tonumber(ui.event_ts) or 0
-    if new_event_ts > 0 and new_event_ts ~= (state.battle_last_event_ts or 0) then
+    if new_event_ts > (state.battle_last_event_ts or 0) then
         state.battle_last_event_ts = new_event_ts
         state.battle_event_shown_at = now
+        battle_debug("event toast: " .. util.safe_str(ui.event_label))
     end
 
-    if ui.state == "finished" or ui.state == "cancelled" then
-        if prev_state ~= ui.state then
-            state.battle_result_hold_until = battle_parse.start_result_hold(ui.state, now)
+    if battle_parse.is_terminal_ui(ui) then
+        state.battle_finish_latch_snapshot = battle_parse.deep_copy_ui(ui)
+        state.battle_result_hold_until = battle_parse.start_result_hold(now)
+        battle_debug("latch ON state=" .. ui.state .. " status=" .. ui.status)
+    end
+
+    local v = util.safe_str(raw.version)
+    state.battle_applied_version = v
+    state.battle_version = v
+    state.battle_remote_version = v
+    battle_debug(string.format(
+        "apply_snapshot ok v=%s state=%s scores=%d-%d",
+        v, ui.state, ui.score_left or 0, ui.score_right or 0
+    ))
+end
+
+local function with_toast_timeout(ui, now)
+    if ui == nil then return nil end
+    now = now or os.clock()
+    local toast_sec = config.BATTLE_EVENT_TOAST_SEC or 2
+    if ui.event_label ~= nil and ui.event_label ~= "" then
+        local shown_at = state.battle_event_shown_at or 0
+        if shown_at > 0 and (now - shown_at) > toast_sec then
+            local copy = battle_parse.deep_copy_ui(ui)
+            if copy ~= nil then
+                copy.event_label = ""
+            end
+            return copy
         end
     end
-
-    state.battle_ui = ui
-    state.battle_last_error = nil
+    return ui
 end
 
 local function server_candidates(ctx, force_new_cycle)
@@ -114,6 +172,10 @@ local function try_next_server(candidates, attempt_field)
     return false
 end
 
+local function is_transient_http(code)
+    return code == 429 or code == 502 or code == 503 or code == 504
+end
+
 function battle_fetch.start_snapshot_fetch(ctx, server_name, chain_next)
     if state.battle_fetch_pending then return end
 
@@ -125,6 +187,7 @@ function battle_fetch.start_snapshot_fetch(ctx, server_name, chain_next)
     state.battle_last_server_tried = server_name
 
     local url = battle_url(config.BATTLE_PATH or "/hud/battle", server_name, ctx.player_steam_id)
+    battle_debug("fetch /battle server=" .. server_name)
     web_queue.get(url, "battle", function(err, response)
         state.battle_fetch_pending = false
         local now = os.clock()
@@ -139,11 +202,16 @@ function battle_fetch.start_snapshot_fetch(ctx, server_name, chain_next)
                 end
             end
             if reason == "no_battle" then
-                clear_battle_cache(true)
+                if latch_active(now) then
+                    battle_debug("snapshot no_battle ignored (latch)")
+                    return
+                end
+                clear_battle_cache(false)
                 state.battle_last_error = nil
                 return
             end
             state.battle_last_error = reason or "battle_unavailable"
+            battle_debug("snapshot fail: " .. tostring(reason))
         end
 
         if util.is_web_error(err) then
@@ -154,15 +222,19 @@ function battle_fetch.start_snapshot_fetch(ctx, server_name, chain_next)
         state.last_http_status = util.http_status_code(response) or state.last_http_status
         local code = util.http_status_code(response)
 
-        if code == 429 then
-            state.battle_backoff_until = now + (config.BATTLE_BACKOFF_SEC or 5)
-            state.battle_last_error = nil
+        if is_transient_http(code) then
+            state.battle_backoff_until = now + (config.BATTLE_BACKOFF_SEC or 2.5)
+            battle_debug("snapshot http " .. tostring(code) .. " backoff")
             return
         end
 
         local raw, err_reason = util.read_api_response(err, response)
         if err_reason == "no_battle" or (code == 404 and raw ~= nil and raw.reason == "no_battle") then
-            clear_battle_cache(true)
+            if latch_active(now) then
+                battle_debug("snapshot 404 ignored (latch)")
+                return
+            end
+            clear_battle_cache(false)
             state.battle_last_error = nil
             return
         end
@@ -230,7 +302,11 @@ function battle_fetch.start_version_fetch(ctx, force_new_cycle, chain_next)
                 return
             end
             if reason == "no_battle" then
-                clear_battle_cache(true)
+                if latch_active(tick_now) then
+                    battle_debug("version no_battle ignored (latch)")
+                    return
+                end
+                clear_battle_cache(false)
                 state.battle_last_error = nil
                 return
             end
@@ -245,14 +321,19 @@ function battle_fetch.start_version_fetch(ctx, force_new_cycle, chain_next)
         state.last_http_status = util.http_status_code(response) or state.last_http_status
         local code = util.http_status_code(response)
 
-        if code == 429 then
-            state.battle_backoff_until = tick_now + (config.BATTLE_BACKOFF_SEC or 5)
+        if is_transient_http(code) then
+            state.battle_backoff_until = tick_now + (config.BATTLE_BACKOFF_SEC or 2.5)
+            battle_debug("version http " .. tostring(code) .. " backoff")
             return
         end
 
         local raw, err_reason = util.read_api_response(err, response)
         if err_reason == "no_battle" or (code == 404 and raw ~= nil and raw.reason == "no_battle") then
-            clear_battle_cache(true)
+            if latch_active(tick_now) then
+                battle_debug("version 404 ignored (latch)")
+                return
+            end
+            clear_battle_cache(false)
             state.battle_last_error = nil
             return
         end
@@ -273,21 +354,20 @@ function battle_fetch.start_version_fetch(ctx, force_new_cycle, chain_next)
         state.battle_server_candidates = nil
         state.battle_version_fetch_attempt = 0
         state.battle_last_error = nil
+        battle_debug("version=" .. remote_version .. " applied=" .. util.safe_str(state.battle_applied_version))
 
         if remote_version == "" or remote_version == "0" then
+            if latch_active(tick_now) then
+                battle_debug("version 0 ignored (latch)")
+                return
+            end
             state.battle_version = "0"
             state.battle_applied_version = ""
-            clear_battle_cache(true)
+            clear_battle_cache(false)
             return
         end
 
-        if battle_parse.should_refresh_snapshot(
-            state.battle_ui,
-            remote_version,
-            state.battle_applied_version,
-            state.battle_last_snapshot_at,
-            tick_now
-        ) then
+        if battle_parse.should_refresh_snapshot(remote_version, state.battle_applied_version) then
             battle_fetch.start_snapshot_fetch(ctx, server_name, false)
         end
     end)
@@ -313,38 +393,25 @@ end
 function battle_fetch.get_battle(now)
     now = now or os.clock()
 
-    if state.battle_ui == nil then return nil end
-
-    local ui = state.battle_ui
-    local toast_sec = config.BATTLE_EVENT_TOAST_SEC or 2
-    if ui.event_label ~= nil and ui.event_label ~= "" then
-        local shown_at = state.battle_event_shown_at or 0
-        if shown_at > 0 and (now - shown_at) > toast_sec then
-            ui = {}
-            for k, v in pairs(state.battle_ui) do ui[k] = v end
-            ui.event_label = ""
-        end
+    if latch_active(now) then
+        return with_toast_timeout(state.battle_finish_latch_snapshot, now)
     end
 
-    if state.battle_version == "0" or state.battle_version == "" then
-        if now < (state.battle_result_hold_until or 0) then
-            return ui
-        end
-        state.battle_ui = nil
-        state.battle_result_hold_until = 0
-        return nil
+    if state.battle_ui ~= nil then
+        return with_toast_timeout(state.battle_ui, now)
     end
 
-    return ui
+    return nil
 end
 
 function battle_fetch.tick(ctx, now)
     now = now or os.clock()
     watchdog_timeouts(now)
 
-    if state.battle_ui ~= nil and (state.battle_version == "0" or state.battle_version == "") then
+    if latch_active(now) == false and (state.battle_result_hold_until or 0) > 0 then
         if now >= (state.battle_result_hold_until or 0) then
-            state.battle_ui = nil
+            battle_debug("latch OFF")
+            state.battle_finish_latch_snapshot = nil
             state.battle_result_hold_until = 0
         end
     end
@@ -360,7 +427,11 @@ function battle_fetch.tick(ctx, now)
 
     if now < (state.battle_backoff_until or 0) then return end
 
-    local interval_ms = battle_parse.poll_interval_ms(state.battle_ui, state.battle_version)
+    local poll_ui = state.battle_ui
+    if latch_active(now) and state.battle_finish_latch_snapshot ~= nil then
+        poll_ui = state.battle_finish_latch_snapshot
+    end
+    local interval_ms = battle_parse.poll_interval_ms(poll_ui, state.battle_remote_version)
     local interval_sec = interval_ms / 1000
     if (now - (state.battle_last_poll_at or 0)) < interval_sec then
         return
@@ -375,6 +446,8 @@ function battle_fetch.reset()
     state.battle_applied_version = ""
     state.battle_snapshot_raw = nil
     state.battle_ui = nil
+    state.battle_finish_latch_snapshot = nil
+    state.battle_last_battle_id = ""
     state.battle_version_pending = false
     state.battle_fetch_pending = false
     state.battle_last_poll_at = 0

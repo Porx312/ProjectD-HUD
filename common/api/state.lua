@@ -82,6 +82,8 @@ local function create_state()
         battle_last_server_tried = "",
         battle_event_shown_at = 0,
         battle_last_snapshot_at = 0,
+        battle_finish_latch_snapshot = nil,
+        battle_last_battle_id = "",
 
         BATTLE_FETCH_TIMEOUT_SEC = 12,
         BATTLE_VERSION_TIMEOUT_SEC = 12,

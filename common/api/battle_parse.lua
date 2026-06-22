@@ -102,6 +102,26 @@ local function parse_gap(raw)
     }
 end
 
+local function parse_points_log(raw)
+    local log = raw.pointsLog
+    if type(log) ~= "table" then return {} end
+    local out = {}
+    local start = math.max(1, #log - 2)
+    for i = start, #log do
+        local entry = log[i]
+        if type(entry) == "table" then
+            local label = util.safe_str(entry.label)
+            if label == "" then
+                label = util.safe_str(entry.reason)
+            end
+            if label ~= "" then
+                out[#out + 1] = label
+            end
+        end
+    end
+    return out
+end
+
 local function winner_name(raw, local_player, opponent)
     local winner_id = steam.normalize_steam_id(raw.winnerSteamId or raw.winner_steam_id)
     if winner_id == "" then return nil end
@@ -116,8 +136,9 @@ local function winner_name(raw, local_player, opponent)
     return nil
 end
 
-local function center_text_for(state_name, arming_countdown, local_player, last_event, looking)
+local function center_text_for(state_name, status_name, arming_countdown, local_player, looking)
     if looking then return "LOOKING" end
+    if status_name == "draw" then return "DRAW" end
     if state_name == "pairing" then return "PAIRING" end
     if state_name == "arming" then
         local n = tonumber(arming_countdown)
@@ -129,9 +150,6 @@ local function center_text_for(state_name, arming_countdown, local_player, last_
     if state_name == "active" then
         local role = string.upper(util.safe_str(local_player and local_player.role))
         if role == "LEAD" or role == "CHASE" then return role end
-        if last_event ~= nil and util.safe_str(last_event.label) ~= "" then
-            return util.safe_str(last_event.label)
-        end
         return "ACTIVE"
     end
     if state_name == "finished" then return "FINISHED" end
@@ -148,6 +166,28 @@ local function player_ui_fields(player)
         role = player.role,
         placeholder = player.placeholder == true,
     }
+end
+
+function battle_parse.is_terminal_ui(ui)
+    if ui == nil then return false end
+    local state_name = string.lower(util.safe_str(ui.state))
+    local status_name = string.lower(util.safe_str(ui.status))
+    if state_name == "finished" or state_name == "cancelled" then return true end
+    if status_name == "finished" or status_name == "cancelled" or status_name == "draw" then
+        return true
+    end
+    return false
+end
+
+function battle_parse.is_terminal_raw(raw)
+    if raw == nil or type(raw) ~= "table" then return false end
+    local state_name = string.lower(util.safe_str(raw.state))
+    local status_name = string.lower(util.safe_str(raw.status))
+    if state_name == "finished" or state_name == "cancelled" then return true end
+    if status_name == "finished" or status_name == "cancelled" or status_name == "draw" then
+        return true
+    end
+    return false
 end
 
 function battle_parse.lobby_from_profile(profile, ctx)
@@ -174,23 +214,14 @@ function battle_parse.lobby_from_profile(profile, ctx)
         player_right = battle_parse.placeholder_opponent(),
         event_label = "",
         event_ts = 0,
+        points_log = {},
         is_lobby = true,
     }
 end
 
-function battle_parse.should_hold_result(state_name, now, hold_until)
-    if state_name ~= "finished" and state_name ~= "cancelled" then
-        return false
-    end
-    return (now or 0) < (hold_until or 0)
-end
-
-function battle_parse.start_result_hold(state_name, now)
-    if state_name ~= "finished" and state_name ~= "cancelled" then
-        return 0
-    end
+function battle_parse.start_result_hold(now)
     local hold_sec = config.BATTLE_RESULT_HOLD_SEC or 4
-    return (now or 0) + hold_sec
+    return (now or os.clock()) + hold_sec
 end
 
 function battle_parse.to_ui(raw, local_steam_id)
@@ -199,6 +230,7 @@ function battle_parse.to_ui(raw, local_steam_id)
     local state_name = string.lower(util.safe_str(raw.state))
     if state_name == "" or state_name == "none" then return nil end
 
+    local status_name = string.lower(util.safe_str(raw.status))
     local local_player, opponent = resolve_sides(raw, local_steam_id)
     local looking = opponent_missing(opponent)
     if looking then
@@ -209,26 +241,23 @@ function battle_parse.to_ui(raw, local_steam_id)
     local event_ts = last_event ~= nil and tonumber(last_event.ts) or 0
     local gap = parse_gap(raw)
     local is_active = state_name == "active"
-    local is_finished = state_name == "finished" or state_name == "cancelled"
+    local is_draw = status_name == "draw"
+    local is_terminal = battle_parse.is_terminal_raw(raw)
+
+    local center = center_text_for(
+        state_name,
+        status_name,
+        raw.armingCountdownSec,
+        local_player,
+        looking
+    )
 
     return {
         state = state_name,
-        status = string.lower(util.safe_str(raw.status)),
+        status = status_name,
         looking_for_opponent = looking,
-        center_text = center_text_for(
-            state_name,
-            raw.armingCountdownSec,
-            local_player,
-            last_event,
-            looking
-        ),
-        mode = center_text_for(
-            state_name,
-            raw.armingCountdownSec,
-            local_player,
-            last_event,
-            looking
-        ),
+        center_text = center,
+        mode = center,
         score_left = tonumber(local_player.score) or 0,
         score_right = looking and 0 or (tonumber(opponent.score) or 0),
         player_left = player_ui_fields(local_player),
@@ -238,38 +267,25 @@ function battle_parse.to_ui(raw, local_steam_id)
         event_ts = event_ts,
         winner_name = winner_name(raw, local_player, looking and nil or opponent),
         show_gap = is_active and not looking,
-        show_scores = is_active or is_finished,
+        show_scores = is_active or is_terminal or is_draw,
         gap = gap,
         gap3d_m = gap.current,
         disappear_gap_m = gap.max,
         battle_id = util.safe_str(raw.battleId),
         version = util.safe_str(raw.version),
+        points_log = parse_points_log(raw),
         is_prep = PREP_STATES[state_name] == true,
         is_lobby = false,
     }
 end
 
-function battle_parse.should_refresh_snapshot(ui, remote_version, applied_version, last_snapshot_at, now)
+function battle_parse.should_refresh_snapshot(remote_version, applied_version)
     remote_version = util.safe_str(remote_version)
     applied_version = util.safe_str(applied_version)
-    now = now or 0
-
     if remote_version == "" or remote_version == "0" then
         return false
     end
-    if remote_version ~= applied_version or applied_version == "" then
-        return true
-    end
-    if ui == nil then return false end
-
-    local state_name = string.lower(util.safe_str(ui.state))
-    if state_name ~= "active" and not PREP_STATES[state_name] then
-        return false
-    end
-
-    local interval_ms = battle_parse.poll_interval_ms(ui, remote_version)
-    local age_ms = (now - (last_snapshot_at or 0)) * 1000
-    return age_ms >= interval_ms
+    return remote_version ~= applied_version or applied_version == ""
 end
 
 function battle_parse.poll_interval_ms(ui, version)
@@ -291,6 +307,23 @@ function battle_parse.poll_interval_ms(ui, version)
         return config.BATTLE_POLL_IDLE_MS or 2000
     end
     return config.BATTLE_POLL_IDLE_MS or 2000
+end
+
+function battle_parse.deep_copy_ui(ui)
+    if ui == nil then return nil end
+    local out = {}
+    for k, v in pairs(ui) do
+        if type(v) == "table" then
+            local inner = {}
+            for k2, v2 in pairs(v) do
+                inner[k2] = v2
+            end
+            out[k] = inner
+        else
+            out[k] = v
+        end
+    end
+    return out
 end
 
 return battle_parse

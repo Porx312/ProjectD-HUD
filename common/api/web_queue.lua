@@ -5,6 +5,17 @@ local util = require("common.api.util")
 
 local web_queue = {}
 
+local function battle_poll_priority()
+    local now = os.clock()
+    if now < (state.battle_result_hold_until or 0) and state.battle_finish_latch_snapshot ~= nil then
+        return true
+    end
+    local applied = util.safe_str(state.battle_applied_version)
+    if applied ~= "" and applied ~= "0" then return true end
+    if state.battle_ui ~= nil then return true end
+    return false
+end
+
 local function log_event(kind, detail)
     state.last_web_event = util.safe_str(detail)
     ac.debug("ProjectD-HUD " .. kind, state.last_web_event)
@@ -69,11 +80,17 @@ end
 
 function web_queue.get(url, kind, callback)
     if state.web_queue == nil then state.web_queue = {} end
-    state.web_queue[#state.web_queue + 1] = {
+    local item = {
         url = url,
         kind = kind or "http",
         callback = callback,
     }
+    kind = kind or "http"
+    if battle_poll_priority() and (kind == "battle" or kind == "battle_version") then
+        table.insert(state.web_queue, 1, item)
+    else
+        state.web_queue[#state.web_queue + 1] = item
+    end
     web_queue.pump()
 end
 
