@@ -230,24 +230,33 @@ function mock.get_rival()
     return nil
 end
 
---- Battle HUD mock (Ryosuke vs Takumi — preview layout only).
+--- Battle HUD mock — active battle with 3D gap bar.
 function mock.get_battle()
     return {
-        mode = "overtake",
-        score_left = 0,
-        score_right = 0,
-        gap = { current = 170, max = 200 },
+        state = "active",
+        center_text = "LEAD",
+        mode = "LEAD",
+        score_left = 2,
+        score_right = 1,
+        show_scores = true,
+        show_gap = true,
+        gap = { current = 125, max = 250 },
+        gap3d_m = 125,
+        disappear_gap_m = 250,
+        event_label = "OVERTAKE +1",
         player_left = {
             name = "Ryosuke",
             car_name = "rx7",
             tier = 10,
             avatar_url = avatar("Ryosuke Takahashi"),
+            role = "lead",
         },
         player_right = {
             name = "Takumi",
-            car_name = "rx7",
+            car_name = "ae86",
             tier = 10,
             avatar_url = avatar("Takumi Fujiwara"),
+            role = "chase",
         },
     }
 end

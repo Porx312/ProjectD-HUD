@@ -62,6 +62,8 @@ local function create_state()
         server_names_tried = nil,
 
         battle_version = "",
+        battle_remote_version = "",
+        battle_applied_version = "",
         battle_snapshot_raw = nil,
         battle_ui = nil,
         battle_version_pending = false,
@@ -79,6 +81,7 @@ local function create_state()
         battle_last_resolved_server_name = nil,
         battle_last_server_tried = "",
         battle_event_shown_at = 0,
+        battle_last_snapshot_at = 0,
 
         BATTLE_FETCH_TIMEOUT_SEC = 12,
         BATTLE_VERSION_TIMEOUT_SEC = 12,

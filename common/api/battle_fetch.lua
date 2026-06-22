@@ -49,8 +49,11 @@ local function apply_snapshot(raw, local_steam_id, now)
     end
 
     local prev_state = state.battle_ui ~= nil and state.battle_ui.state or ""
-    state.battle_snapshot_raw = raw
-    state.battle_version = util.safe_str(raw.version)
+    local v = util.safe_str(raw.version)
+    state.battle_applied_version = v
+    state.battle_version = v
+    state.battle_remote_version = v
+    state.battle_last_snapshot_at = now
 
     local ui = battle_parse.to_ui(raw, local_steam_id)
     if ui == nil then
@@ -264,25 +267,28 @@ function battle_fetch.start_version_fetch(ctx, force_new_cycle, chain_next)
             return
         end
 
-        local version = util.safe_str(raw.version)
+        local remote_version = util.safe_str(raw.version)
+        state.battle_remote_version = remote_version
         state.battle_last_resolved_server_name = server_name
         state.battle_server_candidates = nil
         state.battle_version_fetch_attempt = 0
         state.battle_last_error = nil
 
-        if version == "" or version == "0" then
+        if remote_version == "" or remote_version == "0" then
             state.battle_version = "0"
+            state.battle_applied_version = ""
             clear_battle_cache(true)
             return
         end
 
-        local changed = version ~= util.safe_str(state.battle_version)
-        state.battle_version = version
-
-        if changed or state.battle_snapshot_raw == nil then
+        if battle_parse.should_refresh_snapshot(
+            state.battle_ui,
+            remote_version,
+            state.battle_applied_version,
+            state.battle_last_snapshot_at,
+            tick_now
+        ) then
             battle_fetch.start_snapshot_fetch(ctx, server_name, false)
-        elseif state.battle_snapshot_raw ~= nil then
-            apply_snapshot(state.battle_snapshot_raw, ctx.player_steam_id, tick_now)
         end
     end)
 end
@@ -365,6 +371,8 @@ end
 
 function battle_fetch.reset()
     state.battle_version = ""
+    state.battle_remote_version = ""
+    state.battle_applied_version = ""
     state.battle_snapshot_raw = nil
     state.battle_ui = nil
     state.battle_version_pending = false
@@ -382,6 +390,7 @@ function battle_fetch.reset()
     state.battle_last_resolved_server_name = nil
     state.battle_last_server_tried = ""
     state.battle_event_shown_at = 0
+    state.battle_last_snapshot_at = 0
 end
 
 return battle_fetch

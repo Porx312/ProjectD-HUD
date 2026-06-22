@@ -9,6 +9,7 @@ local parse = require("common.api.parse")
 local bundle = require("common.api.bundle")
 local fetch = require("common.api.fetch")
 local battle_fetch = require("common.api.battle_fetch")
+local battle_parse = require("common.api.battle_parse")
 local status = require("common.api.status")
 
 local api = {}
@@ -214,7 +215,15 @@ function api.get_rival()
 end
 
 function api.get_battle()
-    return battle_fetch.get_battle(os.clock())
+    local battle = battle_fetch.get_battle(os.clock())
+    if battle ~= nil then return battle end
+
+    local ok, ctx = pcall(context.read_session_context)
+    if not ok or not context.battle_context_ready(ctx) then
+        return nil
+    end
+
+    return battle_parse.lobby_from_profile(api.get_player_profile(), ctx)
 end
 
 function api.reset_session_state()

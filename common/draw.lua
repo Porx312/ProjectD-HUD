@@ -430,9 +430,64 @@ end
 
 local function battle_player_side(panel_o, panel_w, player, side, m)
     theme.ensure_fonts()
-    local url = images.resolve_url(player.name, player.avatar_url)
+    player = player or {}
     local pad = m.pad
     local avatar_y = panel_o.y + (m.main_h - m.avatar) * 0.5
+
+    if player.placeholder == true then
+        local placeholder_name = "Looking for opponent"
+        if side == "left" then
+            local avatar_x = panel_o.x + pad
+            ui.drawRectFilled(
+                vec2(avatar_x, avatar_y),
+                vec2(avatar_x + m.avatar, avatar_y + m.avatar),
+                theme.colors.battle_gap_track,
+                m.avatar * 0.5,
+                layout.corners_all()
+            )
+            ui.drawRect(
+                vec2(avatar_x, avatar_y),
+                vec2(avatar_x + m.avatar, avatar_y + m.avatar),
+                theme.colors.battle_border,
+                m.avatar * 0.5,
+                layout.corners_all(),
+                1
+            )
+            local tx = avatar_x + m.avatar + 8
+            local ty = panel_o.y + (m.main_h - m.name_fs) * 0.5
+            ui.pushDWriteFont(theme.fonts.medium)
+            ui.dwriteDrawText(placeholder_name, m.name_fs - 1, vec2(tx, ty), theme.colors.muted)
+            ui.popDWriteFont()
+        else
+            local avatar_x = panel_o.x + panel_w - pad - m.avatar
+            ui.drawRectFilled(
+                vec2(avatar_x, avatar_y),
+                vec2(avatar_x + m.avatar, avatar_y + m.avatar),
+                theme.colors.battle_gap_track,
+                m.avatar * 0.5,
+                layout.corners_all()
+            )
+            ui.drawRect(
+                vec2(avatar_x, avatar_y),
+                vec2(avatar_x + m.avatar, avatar_y + m.avatar),
+                theme.colors.battle_border,
+                m.avatar * 0.5,
+                layout.corners_all(),
+                1
+            )
+            ui.pushDWriteFont(theme.fonts.medium)
+            local name_w = measure_text(theme.fonts.medium, placeholder_name, m.name_fs - 1)
+            ui.popDWriteFont()
+            local ty = panel_o.y + (m.main_h - (m.name_fs - 1)) * 0.5
+            local tx = avatar_x - 8 - name_w
+            ui.pushDWriteFont(theme.fonts.medium)
+            ui.dwriteDrawText(placeholder_name, m.name_fs - 1, vec2(tx, ty), theme.colors.muted)
+            ui.popDWriteFont()
+        end
+        return
+    end
+
+    local url = images.resolve_url(player.name, player.avatar_url)
     local name = theme.format_display_name(player.name)
     local car = profile_car_name(player)
 
@@ -485,32 +540,16 @@ local function battle_player_side(panel_o, panel_w, player, side, m)
     end
 end
 
---- Centered banner for pre-battle / result states.
-local function battle_state_banner(panel_o, panel_w, panel_h, title, subtitle, title_fs, subtitle_fs)
-    theme.ensure_fonts()
-    title_fs = title_fs or 20
-    subtitle_fs = subtitle_fs or 12
-
-    ui.drawRectFilled(panel_o, vec2(panel_o.x + panel_w, panel_o.y + panel_h), theme.colors.battle_bg, 8, layout.corners_all())
-    ui.drawRect(panel_o, vec2(panel_o.x + panel_w, panel_o.y + panel_h), theme.colors.battle_border, 8, layout.corners_all(), 1)
-
-    local center_x = panel_o.x + panel_w * 0.5
-    local title_y = panel_o.y + panel_h * 0.38 - title_fs * 0.5
-
-    ui.pushDWriteFont(theme.fonts.bold)
-    local title_w = measure_text(theme.fonts.bold, title, title_fs)
-    ui.dwriteDrawText(title, title_fs, vec2(center_x - title_w * 0.5, title_y), theme.colors.white)
-    ui.popDWriteFont()
-
-    if subtitle ~= nil and subtitle ~= "" then
-        ui.pushDWriteFont(theme.fonts.medium)
-        local sub_w = measure_text(theme.fonts.medium, subtitle, subtitle_fs)
-        ui.dwriteDrawText(subtitle, subtitle_fs, vec2(center_x - sub_w * 0.5, title_y + title_fs + 6), theme.colors.muted)
-        ui.popDWriteFont()
-    end
+local function battle_parse_placeholder()
+    return {
+        placeholder = true,
+        name = "Looking for opponent",
+        car_name = "",
+        tier = 0,
+    }
 end
 
---- Battle HUD: pill bar with two players, center score, optional gap progress.
+--- Battle HUD: two players, center phase label, scores, 3D separation bar.
 function draw.battle_block(win_origin, win_size, battle)
     theme.ensure_fonts()
     battle = battle or {}
@@ -518,95 +557,80 @@ function draw.battle_block(win_origin, win_size, battle)
     local panel_o = win_origin
     local panel_w = win_size.x
     local panel_h = win_size.y
-    local state_name = string.lower(tostring(battle.state or "active"))
+    local state_name = string.lower(tostring(battle.state or "pairing"))
 
-    if state_name == "pairing" then
-        battle_state_banner(panel_o, panel_w, panel_h, "Pairing...", nil, 18, 12)
-        return
-    end
-
-    if state_name == "arming" then
-        local count = tonumber(battle.arming_countdown) or 0
-        battle_state_banner(panel_o, panel_w, panel_h, tostring(count), "Get ready", 36, 11)
-        return
-    end
-
-    if state_name == "armed" then
-        battle_state_banner(panel_o, panel_w, panel_h, "ARMED", nil, 22, 12)
-        return
-    end
-
-    if state_name == "launching" then
-        battle_state_banner(panel_o, panel_w, panel_h, "GO!", nil, 32, 12)
-        return
-    end
-
-    if state_name == "cancelled" then
-        battle_state_banner(panel_o, panel_w, panel_h, "Battle cancelled", nil, 16, 12)
-        return
-    end
-
-    if state_name == "finished" then
-        local score_text = tostring(battle.score_left or 0) .. " vs " .. tostring(battle.score_right or 0)
-        local winner = battle.winner_name
-        local subtitle = score_text
-        if winner ~= nil and winner ~= "" then
-            subtitle = winner .. " wins  ·  " .. score_text
-        end
-        battle_state_banner(panel_o, panel_w, panel_h, "FINISHED", subtitle, 18, 12)
-        return
-    end
-
-    local radius = math.min(win_size.y * 0.5 - 0.5, m.main_h * 0.5)
-
+    local radius = math.min(panel_h * 0.5 - 0.5, m.main_h * 0.5)
     local main_br = vec2(panel_o.x + panel_w, panel_o.y + m.main_h)
     ui.drawRectFilled(panel_o, main_br, theme.colors.battle_bg, radius, layout.corners_all())
     ui.drawRect(panel_o, main_br, theme.colors.battle_border, radius, layout.corners_all(), 1)
 
     local left = battle.player_left or {}
-    local right = battle.player_right or {}
+    local right = battle.player_right or battle_parse_placeholder()
     battle_player_side(panel_o, panel_w, left, "left", m)
     battle_player_side(panel_o, panel_w, right, "right", m)
 
     local center_x = panel_o.x + panel_w * 0.5
-    local mode = string.upper(tostring(battle.mode or "battle"))
+    local center_text = tostring(battle.center_text or battle.mode or "BATTLE")
+    local center_fs = m.mode_fs
 
-    ui.pushDWriteFont(theme.fonts.medium)
-    local mode_w = measure_text(theme.fonts.medium, mode, m.mode_fs)
+    if state_name == "arming" then
+        center_fs = 22
+    elseif state_name == "launching" then
+        center_fs = 18
+    elseif state_name == "finished" or state_name == "cancelled" then
+        center_fs = 11
+    end
+
+    ui.pushDWriteFont(theme.fonts.bold)
+    local center_w = measure_text(theme.fonts.bold, center_text, center_fs)
     ui.popDWriteFont()
 
-    local mode_pad_x = 8
-    local mode_pad_y = 3
-    local mode_w_box = mode_w + mode_pad_x * 2
-    local mode_h_box = m.mode_fs + mode_pad_y * 2
-    local mode_x = center_x - mode_w_box * 0.5
-    local mode_y = panel_o.y + 8
+    local center_pad_x = 8
+    local center_pad_y = 3
+    local center_box_w = center_w + center_pad_x * 2
+    local center_box_h = center_fs + center_pad_y * 2
+    local center_x0 = center_x - center_box_w * 0.5
+    local center_y0 = panel_o.y + 8
+
     ui.drawRectFilled(
-        vec2(mode_x, mode_y),
-        vec2(mode_x + mode_w_box, mode_y + mode_h_box),
+        vec2(center_x0, center_y0),
+        vec2(center_x0 + center_box_w, center_y0 + center_box_h),
         theme.colors.battle_mode_bg,
         4,
         layout.corners_all()
     )
-    ui.pushDWriteFont(theme.fonts.medium)
-    ui.dwriteDrawText(mode, m.mode_fs, vec2(mode_x + mode_pad_x, mode_y + mode_pad_y), theme.colors.white)
-    ui.popDWriteFont()
-
-    local score_text = tostring(battle.score_left or 0) .. " vs " .. tostring(battle.score_right or 0)
     ui.pushDWriteFont(theme.fonts.bold)
-    local score_w = measure_text(theme.fonts.bold, score_text, m.score_fs)
-    local score_y = panel_o.y + m.main_h - m.score_fs - 10
-    ui.dwriteDrawText(score_text, m.score_fs, vec2(center_x - score_w * 0.5, score_y), theme.colors.white)
+    ui.dwriteDrawText(center_text, center_fs, vec2(center_x0 + center_pad_x, center_y0 + center_pad_y), theme.colors.white)
     ui.popDWriteFont()
 
-    local show_gap = battle.show_gap ~= false
-    if show_gap then
-        local gap = battle.gap or { current = 0, max = 200 }
-        local gap_current = math.max(0, tonumber(gap.current) or 0)
-        local gap_max = math.max(1, tonumber(gap.max) or 200)
+    if battle.show_scores == true or state_name == "finished" or state_name == "cancelled" then
+        local score_text = tostring(battle.score_left or 0) .. " vs " .. tostring(battle.score_right or 0)
+        if state_name == "finished" and battle.winner_name ~= nil and battle.winner_name ~= "" then
+            score_text = battle.winner_name .. "  " .. score_text
+        end
+        ui.pushDWriteFont(theme.fonts.bold)
+        local score_w = measure_text(theme.fonts.bold, score_text, m.score_fs - 4)
+        local score_y = panel_o.y + m.main_h - (m.score_fs - 4) - 8
+        ui.dwriteDrawText(score_text, m.score_fs - 4, vec2(center_x - score_w * 0.5, score_y), theme.colors.white)
+        ui.popDWriteFont()
+    end
+
+    local event_label = tostring(battle.event_label or "")
+    if event_label ~= "" and state_name == "active" then
+        ui.pushDWriteFont(theme.fonts.medium)
+        local ev_w = measure_text(theme.fonts.medium, event_label, 9)
+        local ev_y = center_y0 + center_box_h + 2
+        ui.dwriteDrawText(event_label, 9, vec2(center_x - ev_w * 0.5, ev_y), theme.colors.accent)
+        ui.popDWriteFont()
+    end
+
+    if battle.show_gap == true then
+        local gap = battle.gap or {}
+        local gap_current = math.max(0, tonumber(gap.current or battle.gap3d_m) or 0)
+        local gap_max = math.max(1, tonumber(gap.max or battle.disappear_gap_m) or 250)
         local gap_ratio = math.min(1, gap_current / gap_max)
 
-        local gap_w = math.min(panel_w * 0.55, 220)
+        local gap_w = math.min(panel_w * 0.88, 340)
         local gap_h = m.gap_h - 6
         local gap_x = center_x - gap_w * 0.5
         local gap_y = panel_o.y + m.main_h - m.gap_overlap
@@ -615,27 +639,21 @@ function draw.battle_block(win_origin, win_size, battle)
         ui.drawRectFilled(vec2(gap_x, gap_y), gap_br, theme.colors.battle_gap_track, 6, layout.corners_all())
         if gap_ratio > 0 then
             local fill_w = math.max(6, gap_w * gap_ratio)
-            ui.drawRectFilled(vec2(gap_x, gap_y), vec2(gap_x + fill_w, gap_y + gap_h), theme.colors.battle_gap_fill, 6, layout.corners_all())
+            ui.drawRectFilled(
+                vec2(gap_x, gap_y),
+                vec2(gap_x + fill_w, gap_y + gap_h),
+                theme.colors.battle_gap_fill,
+                6,
+                layout.corners_all()
+            )
         end
         ui.drawRect(vec2(gap_x, gap_y), gap_br, theme.colors.battle_border, 6, layout.corners_all(), 1)
 
-        local gap_label = "gap " .. tostring(math.floor(gap_current)) .. "/" .. tostring(math.floor(gap_max))
+        local gap_label = string.format("%dm / %dm", math.floor(gap_current + 0.5), math.floor(gap_max + 0.5))
         ui.pushDWriteFont(theme.fonts.medium)
         local gap_label_w = measure_text(theme.fonts.medium, gap_label, m.gap_label_fs)
         local gap_label_y = gap_y + (gap_h - m.gap_label_fs) * 0.5
         ui.dwriteDrawText(gap_label, m.gap_label_fs, vec2(center_x - gap_label_w * 0.5, gap_label_y), theme.colors.white)
-        ui.popDWriteFont()
-    end
-
-    local event_label = tostring(battle.event_label or "")
-    if event_label ~= "" then
-        ui.pushDWriteFont(theme.fonts.medium)
-        local ev_w = measure_text(theme.fonts.medium, event_label, 10)
-        local ev_x = center_x - ev_w * 0.5
-        local ev_y = panel_o.y + m.main_h + 4
-        if ev_y + 10 <= panel_o.y + panel_h then
-            ui.dwriteDrawText(event_label, 10, vec2(ev_x, ev_y), theme.colors.accent or theme.colors.white)
-        end
         ui.popDWriteFont()
     end
 end
