@@ -560,6 +560,7 @@ function draw.battle_block(win_origin, win_size, battle)
     local state_name = string.lower(tostring(battle.state or "pairing"))
     local status_name = string.lower(tostring(battle.status or ""))
     local is_draw = status_name == "draw"
+    local is_terminal = state_name == "finished" or state_name == "cancelled" or is_draw
 
     local radius = math.min(panel_h * 0.5 - 0.5, m.main_h * 0.5)
     local main_br = vec2(panel_o.x + panel_w, panel_o.y + m.main_h)
@@ -610,15 +611,18 @@ function draw.battle_block(win_origin, win_size, battle)
     ui.dwriteDrawText(center_text, center_fs, vec2(center_x0 + center_pad_x, center_y0 + center_pad_y), theme.colors.white)
     ui.popDWriteFont()
 
-    if battle.show_scores == true or state_name == "finished" or state_name == "cancelled" or is_draw then
-        local score_text = tostring(battle.score_left or 0) .. " vs " .. tostring(battle.score_right or 0)
-        if state_name == "finished" and not is_draw and battle.winner_name ~= nil and battle.winner_name ~= "" then
-            score_text = battle.winner_name .. "  " .. score_text
+    if battle.show_scores == true or state_name == "active" or is_terminal or battle.show_prep_scores == true then
+        local score_text = tostring(battle.score_left or 0) .. " - " .. tostring(battle.score_right or 0)
+        if is_terminal and not is_draw and battle.winner_name ~= nil and battle.winner_name ~= "" then
+            score_text = battle.winner_name .. " wins  " .. score_text
+        elseif is_terminal and is_draw then
+            score_text = "DRAW  " .. score_text
         end
         ui.pushDWriteFont(theme.fonts.bold)
-        local score_w = measure_text(theme.fonts.bold, score_text, m.score_fs - 4)
-        local score_y = panel_o.y + m.main_h - (m.score_fs - 4) - 8
-        ui.dwriteDrawText(score_text, m.score_fs - 4, vec2(center_x - score_w * 0.5, score_y), theme.colors.white)
+        local score_fs = state_name == "active" and m.score_fs or (m.score_fs - 2)
+        local score_w = measure_text(theme.fonts.bold, score_text, score_fs)
+        local score_y = panel_o.y + m.main_h - score_fs - 8
+        ui.dwriteDrawText(score_text, score_fs, vec2(center_x - score_w * 0.5, score_y), theme.colors.white)
         ui.popDWriteFont()
     end
 
@@ -626,31 +630,37 @@ function draw.battle_block(win_origin, win_size, battle)
     if event_label == "" and battle.end_label ~= nil then
         event_label = tostring(battle.end_label)
     end
-    local show_event_toast = false
+    local show_point_toast = false
     if event_label ~= "" then
         if state_name == "active" then
-            show_event_toast = true
-        elseif event_label ~= center_text then
-            show_event_toast = true
+            show_point_toast = true
+        elseif is_terminal and event_label ~= center_text then
+            show_point_toast = true
         end
     end
-    if show_event_toast then
+    if show_point_toast then
         ui.pushDWriteFont(theme.fonts.medium)
-        local ev_w = measure_text(theme.fonts.medium, event_label, 9)
+        local ev_fs = is_terminal and 10 or 11
+        local ev_w = measure_text(theme.fonts.medium, event_label, ev_fs)
         local ev_y = center_y0 + center_box_h + 2
-        ui.dwriteDrawText(event_label, 9, vec2(center_x - ev_w * 0.5, ev_y), theme.colors.accent)
+        local ev_color = is_terminal and theme.colors.accent or theme.colors.accent
+        ui.dwriteDrawText(event_label, ev_fs, vec2(center_x - ev_w * 0.5, ev_y), ev_color)
         ui.popDWriteFont()
     end
 
     local points_log = battle.points_log
     if type(points_log) == "table" and #points_log > 0 and state_name == "active" then
-        local feed_label = points_log[#points_log]
-        if feed_label ~= nil and feed_label ~= "" and feed_label ~= event_label then
-            ui.pushDWriteFont(theme.fonts.medium)
-            local feed_w = measure_text(theme.fonts.medium, feed_label, 8)
-            local feed_y = center_y0 + center_box_h + (show_event_toast and 14 or 2)
-            ui.dwriteDrawText(feed_label, 8, vec2(center_x - feed_w * 0.5, feed_y), theme.colors.muted)
-            ui.popDWriteFont()
+        local feed_y = center_y0 + center_box_h + (show_point_toast and 16 or 2)
+        local feed_start = math.max(1, #points_log - 2)
+        for i = feed_start, #points_log do
+            local feed_label = points_log[i]
+            if feed_label ~= nil and feed_label ~= "" and feed_label ~= event_label then
+                ui.pushDWriteFont(theme.fonts.medium)
+                local feed_w = measure_text(theme.fonts.medium, feed_label, 9)
+                ui.dwriteDrawText(feed_label, 9, vec2(center_x - feed_w * 0.5, feed_y), theme.colors.muted)
+                ui.popDWriteFont()
+                feed_y = feed_y + 12
+            end
         end
     end
 

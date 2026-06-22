@@ -102,9 +102,21 @@ local function start_stream_item(item)
         end
     end
 
-    local ok, result = pcall(function()
+    local function start_get()
+        if type(web.request) == "function" then
+            return web.request({
+                url = item.url,
+                method = "GET",
+                headers = {
+                    ["Accept"] = "text/event-stream",
+                    ["Cache-Control"] = "no-cache",
+                },
+            }, on_done, on_chunk)
+        end
         return web.get(item.url, on_done, on_chunk)
-    end)
+    end
+
+    local ok, result = pcall(start_get)
 
     if not ok then
         local ok2 = pcall(function()
@@ -122,6 +134,10 @@ local function start_stream_item(item)
         end
     elseif type(result) == "table" or type(result) == "userdata" then
         item.request = result
+    end
+
+    if item.kind == "battle_sse" and item.callbacks and item.callbacks.on_open then
+        pcall(item.callbacks.on_open)
     end
 end
 

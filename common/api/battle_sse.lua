@@ -1,10 +1,11 @@
---[[ SSE client for GET /hud/battle/stream — parser + web.get stream hook. ]]
+--[[ SSE client: TCP stream (primary) + web.get fallback. ]]
 
 local config = require("common.config")
 local state = require("common.api.state")
 local util = require("common.api.util")
 local web_queue = require("common.api.web_queue")
 local battle_fetch = require("common.api.battle_fetch")
+local battle_sse_tcp = require("common.api.battle_sse_tcp")
 
 local battle_sse = {}
 
@@ -13,16 +14,34 @@ local function trim_line(s)
     return s:gsub("^%s+", ""):gsub("%s+$", "")
 end
 
+local function normalize_payload(payload)
+    if payload == nil then return nil end
+    if type(payload) == "string" then
+        return util.parse_json_body(payload)
+    end
+    if type(payload) ~= "table" then return nil end
+    if payload.snapshot ~= nil and type(payload.snapshot) == "table" then
+        return payload.snapshot
+    end
+    if payload.data ~= nil and type(payload.data) == "table" then
+        local d = payload.data
+        if d.state ~= nil or d.battleId ~= nil or d.player1 ~= nil then
+            return d
+        end
+    end
+    return payload
+end
+
 local function dispatch_event(event_name, data_str, ctx)
     local now = os.clock()
-    local payload = util.parse_json_body(data_str)
+    local payload = normalize_payload(util.parse_json_body(data_str))
     if payload == nil then
-        battle_fetch.debug("sse json parse fail: " .. string.sub(data_str, 1, 80))
+        battle_fetch.debug("sse json parse fail: " .. string.sub(data_str, 1, 120))
         return
     end
 
     event_name = trim_line(event_name)
-    if event_name == "" then
+    if event_name == "" or event_name == "message" then
         if payload.ok == false then
             event_name = "battle:clear"
         else
@@ -30,12 +49,14 @@ local function dispatch_event(event_name, data_str, ctx)
         end
     end
 
+    local steam_id = ctx ~= nil and ctx.player_steam_id or state.battle_sse_steam_id or ""
+
     if event_name == "battle:update" then
         if payload.ok == false then
             battle_fetch.handle_battle_clear(payload, now)
             return
         end
-        battle_fetch.apply_snapshot(payload, ctx.player_steam_id, now)
+        battle_fetch.apply_snapshot(payload, steam_id, now)
         return
     end
 
@@ -55,7 +76,7 @@ local function process_event_block(block, ctx)
 
     for line in string.gmatch(block, "[^\r\n]+") do
         if line:sub(1, 1) == ":" then
-            -- comment / keepalive
+            -- keepalive
         elseif line:sub(1, 6) == "event:" then
             event_name = trim_line(line:sub(7))
         elseif line:sub(1, 5) == "data:" then
@@ -70,6 +91,7 @@ end
 
 function battle_sse.feed(chunk, ctx)
     if chunk == nil or chunk == "" then return end
+    ctx = ctx or state.battle_sse_ctx
     if ctx == nil then return end
 
     state.battle_sse_buffer = (state.battle_sse_buffer or "") .. chunk
@@ -95,6 +117,8 @@ end
 
 local function on_stream_chunk(chunk, ctx)
     if chunk == nil then return end
+    state.battle_sse_connected = true
+    state.battle_sse_stream_pending = false
     if type(chunk) == "table" then
         local body = util.response_body(chunk)
         if body ~= nil and body ~= "" then
@@ -109,6 +133,8 @@ local function on_stream_chunk(chunk, ctx)
 end
 
 local function on_stream_closed(err, response, ctx)
+    if state.battle_sse_mode == "tcp" then return end
+
     state.battle_sse_connected = false
     state.battle_sse_stream_pending = false
     state.battle_sse_buffer = ""
@@ -118,7 +144,7 @@ local function on_stream_closed(err, response, ctx)
     local reconnect = config.BATTLE_SSE_RECONNECT_SEC or 3
     state.battle_sse_reconnect_at = now + reconnect
 
-  if util.is_web_error(err) then
+    if util.is_web_error(err) then
         state.battle_last_error = "network_error"
         battle_fetch.debug("sse closed err=" .. tostring(err))
     else
@@ -136,7 +162,6 @@ local function on_stream_closed(err, response, ctx)
     end
 end
 
---- Incremental body growth when CSP delivers full response object each tick.
 local function on_stream_response(err, response, ctx, item)
     if util.is_web_error(err) then
         on_stream_closed(err, response, ctx)
@@ -164,33 +189,24 @@ local function on_stream_response(err, response, ctx, item)
         battle_sse.feed(delta, ctx)
     end
 
-    if response ~= nil and response.complete == false then
-        return
-    end
-
-    if response ~= nil and response.finished == false then
-        return
-    end
-
-    if item ~= nil and item.expect_persistent == true then
-        return
-    end
+    if response ~= nil and response.complete == false then return end
+    if response ~= nil and response.finished == false then return end
+    if item ~= nil and item.expect_persistent == true then return end
 
     on_stream_closed(nil, response, ctx)
 end
 
-function battle_sse.connect(url, ctx, opts)
-    opts = opts or {}
-    if state.battle_sse_stream_pending or state.battle_sse_connected then
+local function connect_web(url, ctx)
+    if state.battle_sse_stream_pending or (state.battle_sse_connected and state.web_stream ~= nil) then
         return false
     end
 
-    ctx = ctx or {}
     state.battle_sse_stream_pending = true
     state.battle_sse_buffer = ""
     state.battle_sse_last_body_len = 0
+    state.battle_sse_mode = "web"
     state.last_fetch_url = url
-    battle_fetch.debug("sse connect " .. url)
+    battle_fetch.debug("sse web connect " .. url)
 
     local item = {
         url = url,
@@ -198,6 +214,12 @@ function battle_sse.connect(url, ctx, opts)
         expect_persistent = true,
         ctx = ctx,
         callbacks = {
+            on_open = function()
+                state.battle_sse_connected = true
+                state.battle_sse_stream_pending = false
+                state.battle_last_error = nil
+                battle_fetch.debug("sse web stream open")
+            end,
             on_chunk = function(chunk)
                 on_stream_chunk(chunk, ctx)
             end,
@@ -213,24 +235,55 @@ function battle_sse.connect(url, ctx, opts)
     local opened = web_queue.open_stream(item)
     if not opened then
         state.battle_sse_stream_pending = false
-        battle_fetch.debug("sse connect deferred (web busy)")
+        state.battle_sse_mode = nil
+        battle_fetch.debug("sse web deferred (web busy)")
         return false
     end
 
+    state.battle_sse_connected = true
+    state.battle_sse_stream_pending = false
     return true
 end
 
+function battle_sse.connect(url, ctx)
+    ctx = ctx or {}
+    state.battle_sse_ctx = ctx
+    state.battle_sse_steam_id = util.safe_str(ctx.player_steam_id)
+
+    if battle_sse_tcp.available() then
+        if battle_sse_tcp.connect(url, ctx) then
+            state.battle_sse_connected = true
+            state.battle_sse_stream_pending = false
+            state.battle_last_error = nil
+            return true
+        end
+        battle_fetch.debug("sse tcp failed, trying web.get")
+    end
+
+    return connect_web(url, ctx)
+end
+
 function battle_sse.disconnect()
+    battle_sse_tcp.disconnect()
     web_queue.close_stream("battle_sse")
     state.battle_sse_connected = false
     state.battle_sse_stream_pending = false
     state.battle_sse_buffer = ""
     state.battle_sse_last_body_len = 0
-    state.battle_sse_reconnect_at = 0
+    state.battle_sse_mode = nil
+end
+
+function battle_sse.poll()
+    if state.battle_sse_mode == "tcp" then
+        battle_sse_tcp.poll(battle_sse.feed)
+    else
+        web_queue.poll_stream()
+    end
 end
 
 function battle_sse.is_active()
-    return state.battle_sse_connected == true
+    return battle_sse_tcp.is_active()
+        or state.battle_sse_connected == true
         or state.battle_sse_stream_pending == true
         or state.web_stream ~= nil
 end

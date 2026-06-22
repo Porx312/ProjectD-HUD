@@ -181,4 +181,58 @@ function context.build_server_name_candidates(ctx)
     return out
 end
 
+--- Battle SSE uses ac-data internal server id (e.g. "testing"), not lobby display title.
+function context.build_battle_server_name_candidates(ctx)
+    local out, seen = {}, {}
+    local function add(name)
+        name = util.trim_server_name(name)
+        if name == "" then return end
+        local key = string.lower(name)
+        if seen[key] then return end
+        seen[key] = true
+        out[#out + 1] = name
+    end
+    local function add_both(name)
+        name = util.safe_str(name)
+        if name == "" then return end
+        local short = util.normalize_server_name(name)
+        if short ~= "" then add(short) end
+        local raw = util.trim_server_name(name)
+        if raw ~= "" then add(raw) end
+    end
+
+    local sim = util.safe_call(function() return ac.getSim() end)
+
+    local battle_override = util.trim_server_name(state.battle_server_override_storage:get())
+    if battle_override ~= "" then add_both(battle_override) end
+
+    local override = util.trim_server_name(state.server_override_storage:get())
+    if override ~= "" then add_both(override) end
+
+    for _, name in ipairs(steam.all_server_names_from_race_ini()) do
+        add_both(name)
+    end
+
+    if context.is_online_session(sim) then
+        for _, name in ipairs(sim_server_name_sources(sim)) do
+            add_both(name)
+        end
+    end
+
+    if ctx ~= nil then
+        add_both(ctx.server_name)
+    end
+
+    for _, fallback in ipairs(config.BATTLE_SERVER_DEFAULTS or {}) do
+        add_both(fallback)
+    end
+
+    if state.battle_last_resolved_server_name ~= nil and state.battle_last_resolved_server_name ~= "" then
+        add_both(state.battle_last_resolved_server_name)
+    end
+
+    state.server_names_tried = out
+    return out
+end
+
 return context

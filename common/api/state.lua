@@ -58,6 +58,7 @@ local function create_state()
         steam_override_storage = ac.storage("ProjectD-HUD:steam_id", ""),
         steam_cache_storage = ac.storage("ProjectD-HUD:steam_cache", ""),
         server_override_storage = ac.storage("ProjectD-HUD:server_name", ""),
+        battle_server_override_storage = ac.storage("ProjectD-HUD:battle_server_name", ""),
         last_server_tried = "",
         server_names_tried = nil,
 
@@ -81,6 +82,10 @@ local function create_state()
         battle_sse_last_body_len = 0,
         battle_sse_server_attempt = 0,
         battle_sse_session_key = "",
+        battle_sse_connected_at = 0,
+        battle_sse_mode = nil,
+        battle_sse_steam_id = "",
+        battle_tcp = nil,
         web_stream = nil,
     }
 end

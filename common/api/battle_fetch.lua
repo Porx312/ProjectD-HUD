@@ -107,6 +107,11 @@ function battle_fetch.apply_snapshot(raw, local_steam_id, now)
         return
     end
 
+    if raw.ok == false then
+        battle_fetch.handle_battle_clear(raw, now)
+        return
+    end
+
     local battle_id = util.safe_str(raw.battleId)
     if battle_id ~= "" and battle_id ~= (state.battle_last_battle_id or "") then
         if state.battle_last_battle_id ~= nil and state.battle_last_battle_id ~= "" then
@@ -141,6 +146,14 @@ function battle_fetch.apply_snapshot(raw, local_steam_id, now)
         or (tonumber(ui.score_right) or 0) ~= (tonumber(prev_ui.score_right) or 0)
     local should_toast = new_event_ts > (state.battle_last_event_ts or 0)
         or (ui.state == "active" and score_changed and util.safe_str(ui.event_label) ~= "")
+    local prev_log_len = 0
+    if prev_ui ~= nil and type(prev_ui.points_log) == "table" then
+        prev_log_len = #prev_ui.points_log
+    end
+    local new_log_len = type(ui.points_log) == "table" and #ui.points_log or 0
+    if ui.state == "active" and new_log_len > prev_log_len and util.safe_str(ui.event_label) ~= "" then
+        should_toast = true
+    end
     if should_toast then
         if new_event_ts > (state.battle_last_event_ts or 0) then
             state.battle_last_event_ts = new_event_ts
@@ -152,6 +165,7 @@ function battle_fetch.apply_snapshot(raw, local_steam_id, now)
     if battle_parse.is_terminal_ui(ui) then
         state.battle_finish_latch_snapshot = battle_parse.deep_copy_ui(ui)
         state.battle_result_hold_until = battle_parse.start_result_hold(now, ui)
+        state.battle_event_shown_at = now
         state.battle_ui = nil
         state.battle_snapshot_raw = nil
         battle_debug("latch ON state=" .. ui.state .. " -> lobby after hold")
@@ -182,6 +196,9 @@ end
 
 local function with_toast_timeout(ui, now)
     if ui == nil then return nil end
+    if battle_parse.is_terminal_ui(ui) then
+        return ui
+    end
     now = now or os.clock()
     local toast_sec = config.BATTLE_EVENT_TOAST_SEC or 2
     if ui.event_label ~= nil and ui.event_label ~= "" then

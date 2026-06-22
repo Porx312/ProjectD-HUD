@@ -48,6 +48,10 @@ function status.get_status()
             or 0,
         steam_id = util.safe_str(ctx.player_steam_id),
         server_name = util.safe_str(ctx.server_name),
+        battle_server = util.safe_str(state.battle_last_server_tried),
+        battle_sse = state.battle_sse_connected == true,
+        battle_sse_mode = util.safe_str(state.battle_sse_mode),
+        battle_snap_at = state.battle_last_snapshot_at or 0,
         track_id = util.safe_str(ctx.track_id),
         layout_id = util.safe_str(ctx.layout_id),
         context_ready = context.context_is_ready(ctx),
@@ -108,8 +112,11 @@ function status.get_status_message(kind)
         if state.battle_last_error == "network_error" then
             return "Network error (battle)"
         end
+        if state.battle_last_error == "sse_no_data" then
+            return "Battle SSE: no data (set battle_server_name=testing)"
+        end
         if state.battle_last_error == "missing_server_name" then
-            return "No server name"
+            return "No server name — set ProjectD-HUD:battle_server_name (e.g. testing)"
         end
         return nil
     elseif state.fetch_pending or state.profile_fetch_pending then

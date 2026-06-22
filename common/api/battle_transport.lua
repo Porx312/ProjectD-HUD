@@ -34,7 +34,7 @@ local function server_candidates(ctx, force_new_cycle)
     if not force_new_cycle and state.battle_server_candidates ~= nil and #state.battle_server_candidates > 0 then
         return state.battle_server_candidates
     end
-    state.battle_server_candidates = context.build_server_name_candidates(ctx)
+    state.battle_server_candidates = context.build_battle_server_name_candidates(ctx)
     state.battle_sse_server_attempt = 0
     return state.battle_server_candidates
 end
@@ -120,6 +120,8 @@ function battle_transport.try_connect(ctx, now)
     if battle_sse.connect(url, sse_ctx) then
         state.battle_last_resolved_server_name = server_name
         state.battle_sse_session_key = session_key(ctx)
+        state.battle_sse_connected_at = now
+        battle_fetch.debug("sse serverName=" .. server_name)
         return true
     end
 
@@ -149,7 +151,25 @@ function battle_transport.tick(ctx, now)
     end
 
     if battle_sse.is_active() then
-        web_queue.poll_stream()
+        battle_sse.poll()
+        local rotate_sec = config.BATTLE_SSE_IDLE_ROTATE_SEC or 12
+        local connected_at = state.battle_sse_connected_at or 0
+        local last_snap = state.battle_last_snapshot_at or 0
+        if state.battle_sse_connected and connected_at > 0 and (now - connected_at) >= rotate_sec then
+            if last_snap < connected_at then
+                battle_fetch.debug("sse idle on " .. util.safe_str(state.battle_last_server_tried) .. " — try next serverName")
+                state.battle_last_error = "sse_no_data"
+                battle_sse.disconnect()
+                local candidates = state.battle_server_candidates or server_candidates(ctx, true)
+                if try_next_server(candidates) then
+                    state.battle_sse_reconnect_at = 0
+                else
+                    state.battle_server_candidates = nil
+                    state.battle_sse_reconnect_at = now + (config.BATTLE_SSE_RECONNECT_SEC or 3)
+                end
+                state.battle_sse_connected_at = 0
+            end
+        end
     else
         battle_transport.try_connect(ctx, now)
     end
@@ -161,6 +181,7 @@ function battle_transport.reset()
     state.battle_sse_session_key = ""
     state.battle_sse_server_attempt = 0
     state.battle_sse_reconnect_at = 0
+    state.battle_sse_connected_at = 0
 end
 
 return battle_transport
