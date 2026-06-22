@@ -10,10 +10,34 @@ local function battle_poll_priority()
     if now < (state.battle_result_hold_until or 0) and state.battle_finish_latch_snapshot ~= nil then
         return true
     end
+    if state.battle_fetch_pending or state.battle_version_pending then
+        return true
+    end
     local applied = util.safe_str(state.battle_applied_version)
     if applied ~= "" and applied ~= "0" then return true end
     if state.battle_ui ~= nil then return true end
-    return false
+    return true
+end
+
+local function battle_queue_insert(item, kind)
+    kind = kind or "http"
+    if not battle_poll_priority() or (kind ~= "battle" and kind ~= "battle_version") then
+        state.web_queue[#state.web_queue + 1] = item
+        return
+    end
+    if kind == "battle" then
+        table.insert(state.web_queue, 1, item)
+        return
+    end
+    local insert_at = 1
+    for i = 1, #state.web_queue do
+        if state.web_queue[i].kind ~= "battle" then
+            insert_at = i
+            break
+        end
+        insert_at = i + 1
+    end
+    table.insert(state.web_queue, insert_at, item)
 end
 
 local function log_event(kind, detail)
@@ -86,11 +110,7 @@ function web_queue.get(url, kind, callback)
         callback = callback,
     }
     kind = kind or "http"
-    if battle_poll_priority() and (kind == "battle" or kind == "battle_version") then
-        table.insert(state.web_queue, 1, item)
-    else
-        state.web_queue[#state.web_queue + 1] = item
-    end
+    battle_queue_insert(item, kind)
     web_queue.pump()
 end
 

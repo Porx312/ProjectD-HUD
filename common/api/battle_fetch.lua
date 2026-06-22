@@ -60,20 +60,21 @@ local function ensure_end_latch_before_clear(now, reason)
 
     if battle_parse.is_terminal_ui(state.battle_ui) then
         state.battle_finish_latch_snapshot = battle_parse.deep_copy_ui(state.battle_ui)
-        state.battle_result_hold_until = battle_parse.start_result_hold(now)
+        state.battle_result_hold_until = battle_parse.start_result_hold(now, state.battle_ui)
         battle_debug("latch ON (terminal ui)")
         return
     end
 
-    local synth = battle_parse.synthesize_end_ui(state.battle_ui, reason or "CANCELLED")
-    if synth ~= nil and util.safe_str(state.battle_ui.event_label) ~= "" then
-        synth.center_text = state.battle_ui.event_label
-        synth.mode = synth.center_text
-        synth.event_label = state.battle_ui.event_label
+    local reason = "CANCELLED"
+    if util.safe_str(state.battle_ui.end_label) ~= "" then
+        reason = state.battle_ui.end_label
+    elseif util.safe_str(state.battle_ui.event_label) ~= "" then
+        reason = state.battle_ui.event_label
     end
+    local synth = battle_parse.synthesize_end_ui(state.battle_ui, reason)
     if synth ~= nil then
         state.battle_finish_latch_snapshot = synth
-        state.battle_result_hold_until = battle_parse.start_result_hold(now)
+        state.battle_result_hold_until = battle_parse.start_result_hold(now, synth)
         battle_debug("latch ON (synthetic " .. tostring(reason) .. ")")
     end
 end
@@ -155,15 +156,22 @@ local function apply_snapshot(raw, local_steam_id, now)
     state.battle_last_error = nil
 
     local new_event_ts = tonumber(ui.event_ts) or 0
-    if new_event_ts > (state.battle_last_event_ts or 0) then
-        state.battle_last_event_ts = new_event_ts
+    local score_changed = prev_ui == nil
+        or (tonumber(ui.score_left) or 0) ~= (tonumber(prev_ui.score_left) or 0)
+        or (tonumber(ui.score_right) or 0) ~= (tonumber(prev_ui.score_right) or 0)
+    local should_toast = new_event_ts > (state.battle_last_event_ts or 0)
+        or (ui.state == "active" and score_changed and util.safe_str(ui.event_label) ~= "")
+    if should_toast then
+        if new_event_ts > (state.battle_last_event_ts or 0) then
+            state.battle_last_event_ts = new_event_ts
+        end
         state.battle_event_shown_at = now
         battle_debug("event toast: " .. util.safe_str(ui.event_label))
     end
 
     if battle_parse.is_terminal_ui(ui) then
         state.battle_finish_latch_snapshot = battle_parse.deep_copy_ui(ui)
-        state.battle_result_hold_until = battle_parse.start_result_hold(now)
+        state.battle_result_hold_until = battle_parse.start_result_hold(now, ui)
         battle_debug("latch ON state=" .. ui.state .. " status=" .. ui.status)
     end
 
@@ -171,6 +179,7 @@ local function apply_snapshot(raw, local_steam_id, now)
     state.battle_applied_version = v
     state.battle_version = v
     state.battle_remote_version = v
+    state.battle_last_poll_at = 0
     battle_debug(string.format(
         "apply_snapshot ok v=%s state=%s scores=%d-%d",
         v, ui.state, ui.score_left or 0, ui.score_right or 0
@@ -478,6 +487,7 @@ function battle_fetch.tick(ctx, now)
             state.battle_version = "0"
             state.battle_last_event_ts = 0
             state.battle_event_shown_at = 0
+            state.battle_last_poll_at = 0
         end
     end
 

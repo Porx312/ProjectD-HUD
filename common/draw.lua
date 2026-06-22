@@ -581,6 +581,11 @@ function draw.battle_block(win_origin, win_size, battle)
         center_fs = 18
     elseif state_name == "finished" or state_name == "cancelled" or is_draw then
         center_fs = 11
+        if #center_text > 22 then
+            center_fs = 9
+        elseif #center_text > 14 then
+            center_fs = 10
+        end
     end
 
     ui.pushDWriteFont(theme.fonts.bold)
@@ -618,8 +623,17 @@ function draw.battle_block(win_origin, win_size, battle)
     end
 
     local event_label = tostring(battle.event_label or "")
-    local show_event_toast = event_label ~= ""
-        and (state_name == "active" or state_name == "finished" or state_name == "cancelled" or is_draw)
+    if event_label == "" and battle.end_label ~= nil then
+        event_label = tostring(battle.end_label)
+    end
+    local show_event_toast = false
+    if event_label ~= "" then
+        if state_name == "active" then
+            show_event_toast = true
+        elseif event_label ~= center_text then
+            show_event_toast = true
+        end
+    end
     if show_event_toast then
         ui.pushDWriteFont(theme.fonts.medium)
         local ev_w = measure_text(theme.fonts.medium, event_label, 9)
