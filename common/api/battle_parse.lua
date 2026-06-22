@@ -136,9 +136,19 @@ local function winner_name(raw, local_player, opponent)
     return nil
 end
 
-local function center_text_for(state_name, status_name, arming_countdown, local_player, looking)
-    if looking then return "LOOKING" end
+local function center_text_for(state_name, status_name, arming_countdown, local_player, looking, last_event)
     if status_name == "draw" then return "DRAW" end
+    if state_name == "finished" or status_name == "finished" then return "FINISHED" end
+    if state_name == "cancelled" or status_name == "cancelled" then
+        if last_event ~= nil then
+            local label = util.safe_str(last_event.label)
+            if label ~= "" then return label end
+            local reason = util.safe_str(last_event.reason)
+            if reason ~= "" then return string.upper(reason:gsub("_", " ")) end
+        end
+        return "CANCELLED"
+    end
+    if looking then return "LOOKING" end
     if state_name == "pairing" then return "PAIRING" end
     if state_name == "arming" then
         local n = tonumber(arming_countdown)
@@ -152,9 +162,33 @@ local function center_text_for(state_name, status_name, arming_countdown, local_
         if role == "LEAD" or role == "CHASE" then return role end
         return "ACTIVE"
     end
-    if state_name == "finished" then return "FINISHED" end
-    if state_name == "cancelled" then return "CANCELLED" end
     return string.upper(state_name)
+end
+
+function battle_parse.synthesize_end_ui(from_ui, reason_label)
+    if from_ui == nil then return nil end
+    local ui = battle_parse.deep_copy_ui(from_ui)
+    if ui == nil then return nil end
+    if battle_parse.is_terminal_ui(ui) then return ui end
+
+    ui.state = "cancelled"
+    ui.status = "cancelled"
+    ui.center_text = util.safe_str(reason_label) ~= "" and reason_label or "CANCELLED"
+    ui.mode = ui.center_text
+    ui.show_gap = false
+    ui.show_scores = (tonumber(ui.score_left) or 0) > 0 or (tonumber(ui.score_right) or 0) > 0
+    ui.looking_for_opponent = false
+    if ui.player_right ~= nil and ui.player_right.placeholder == true then
+        ui.player_right = {
+            name = "?",
+            tier = 0,
+            avatar_url = nil,
+            car_name = "",
+            role = "",
+            placeholder = false,
+        }
+    end
+    return ui
 end
 
 local function player_ui_fields(player)
@@ -232,9 +266,21 @@ function battle_parse.to_ui(raw, local_steam_id)
 
     local status_name = string.lower(util.safe_str(raw.status))
     local local_player, opponent = resolve_sides(raw, local_steam_id)
-    local looking = opponent_missing(opponent)
+    local is_terminal = battle_parse.is_terminal_raw(raw)
+    local looking = not is_terminal and opponent_missing(opponent)
     if looking then
         opponent = battle_parse.placeholder_opponent()
+    elseif is_terminal and opponent_missing(opponent) then
+        opponent = {
+            name = "?",
+            tier = 0,
+            avatar_url = nil,
+            car_name = "",
+            car_id = "",
+            role = "",
+            steam_id = "",
+            score = 0,
+        }
     end
 
     local last_event = type(raw.lastEvent) == "table" and raw.lastEvent or nil
@@ -242,14 +288,14 @@ function battle_parse.to_ui(raw, local_steam_id)
     local gap = parse_gap(raw)
     local is_active = state_name == "active"
     local is_draw = status_name == "draw"
-    local is_terminal = battle_parse.is_terminal_raw(raw)
 
     local center = center_text_for(
         state_name,
         status_name,
         raw.armingCountdownSec,
         local_player,
-        looking
+        looking,
+        last_event
     )
 
     return {

@@ -42,6 +42,55 @@ local function latch_active(now)
         and state.battle_finish_latch_snapshot ~= nil
 end
 
+local function copy_player_ui(p)
+    if p == nil then return nil end
+    return {
+        name = p.name,
+        tier = p.tier,
+        avatar_url = p.avatar_url,
+        car_name = p.car_name,
+        role = p.role,
+        placeholder = p.placeholder == true,
+    }
+end
+
+local function ensure_end_latch_before_clear(now, reason)
+    if latch_active(now) then return end
+    if state.battle_ui == nil then return end
+
+    if battle_parse.is_terminal_ui(state.battle_ui) then
+        state.battle_finish_latch_snapshot = battle_parse.deep_copy_ui(state.battle_ui)
+        state.battle_result_hold_until = battle_parse.start_result_hold(now)
+        battle_debug("latch ON (terminal ui)")
+        return
+    end
+
+    local synth = battle_parse.synthesize_end_ui(state.battle_ui, reason or "CANCELLED")
+    if synth ~= nil and util.safe_str(state.battle_ui.event_label) ~= "" then
+        synth.center_text = state.battle_ui.event_label
+        synth.mode = synth.center_text
+        synth.event_label = state.battle_ui.event_label
+    end
+    if synth ~= nil then
+        state.battle_finish_latch_snapshot = synth
+        state.battle_result_hold_until = battle_parse.start_result_hold(now)
+        battle_debug("latch ON (synthetic " .. tostring(reason) .. ")")
+    end
+end
+
+local function clear_idle_battle_state(now)
+    now = now or os.clock()
+    if state.battle_ui ~= nil and not battle_parse.is_terminal_ui(state.battle_ui) then
+        ensure_end_latch_before_clear(now, "CANCELLED")
+    end
+    if latch_active(now) then
+        clear_battle_cache(true)
+        return
+    end
+    clear_battle_cache(false)
+    state.battle_last_battle_id = ""
+end
+
 local function clear_battle_cache(keep_latch)
     if keep_latch and latch_active(os.clock()) then
         state.battle_snapshot_raw = nil
@@ -71,7 +120,7 @@ end
 
 local function apply_snapshot(raw, local_steam_id, now)
     if raw == nil then
-        clear_battle_cache(false)
+        clear_idle_battle_state(now)
         return
     end
 
@@ -86,8 +135,18 @@ local function apply_snapshot(raw, local_steam_id, now)
 
     local ui = battle_parse.to_ui(raw, local_steam_id)
     if ui == nil then
-        clear_battle_cache(false)
+        clear_idle_battle_state(now)
         return
+    end
+
+    local prev_ui = state.battle_ui
+    if battle_parse.is_terminal_ui(ui) and prev_ui ~= nil then
+        local pr = ui.player_right
+        if pr ~= nil and pr.placeholder and prev_ui.player_right ~= nil and prev_ui.player_right.placeholder ~= true then
+            ui.player_right = copy_player_ui(prev_ui.player_right)
+            ui.score_right = prev_ui.score_right or ui.score_right
+            ui.looking_for_opponent = false
+        end
     end
 
     state.battle_snapshot_raw = raw
@@ -206,7 +265,7 @@ function battle_fetch.start_snapshot_fetch(ctx, server_name, chain_next)
                     battle_debug("snapshot no_battle ignored (latch)")
                     return
                 end
-                clear_battle_cache(false)
+                clear_idle_battle_state(now)
                 state.battle_last_error = nil
                 return
             end
@@ -234,7 +293,7 @@ function battle_fetch.start_snapshot_fetch(ctx, server_name, chain_next)
                 battle_debug("snapshot 404 ignored (latch)")
                 return
             end
-            clear_battle_cache(false)
+            clear_idle_battle_state(now)
             state.battle_last_error = nil
             return
         end
@@ -306,7 +365,7 @@ function battle_fetch.start_version_fetch(ctx, force_new_cycle, chain_next)
                     battle_debug("version no_battle ignored (latch)")
                     return
                 end
-                clear_battle_cache(false)
+                clear_idle_battle_state(tick_now)
                 state.battle_last_error = nil
                 return
             end
@@ -333,7 +392,7 @@ function battle_fetch.start_version_fetch(ctx, force_new_cycle, chain_next)
                 battle_debug("version 404 ignored (latch)")
                 return
             end
-            clear_battle_cache(false)
+            clear_idle_battle_state(tick_now)
             state.battle_last_error = nil
             return
         end
@@ -363,7 +422,7 @@ function battle_fetch.start_version_fetch(ctx, force_new_cycle, chain_next)
             end
             state.battle_version = "0"
             state.battle_applied_version = ""
-            clear_battle_cache(false)
+            clear_idle_battle_state(tick_now)
             return
         end
 
@@ -410,9 +469,15 @@ function battle_fetch.tick(ctx, now)
 
     if latch_active(now) == false and (state.battle_result_hold_until or 0) > 0 then
         if now >= (state.battle_result_hold_until or 0) then
-            battle_debug("latch OFF")
+            battle_debug("latch OFF -> lobby")
             state.battle_finish_latch_snapshot = nil
             state.battle_result_hold_until = 0
+            state.battle_last_battle_id = ""
+            state.battle_applied_version = ""
+            state.battle_remote_version = "0"
+            state.battle_version = "0"
+            state.battle_last_event_ts = 0
+            state.battle_event_shown_at = 0
         end
     end
 
