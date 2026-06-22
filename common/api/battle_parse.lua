@@ -385,6 +385,11 @@ function battle_parse.to_ui(raw, local_steam_id)
     }
 end
 
+function battle_parse.has_api_key()
+    local key = ac.storage("ProjectD-HUD:api_key", ""):get()
+    return util.safe_str(key) ~= ""
+end
+
 function battle_parse.should_refresh_snapshot(remote_version, applied_version)
     remote_version = util.safe_str(remote_version)
     applied_version = util.safe_str(applied_version)
@@ -396,18 +401,31 @@ end
 
 function battle_parse.poll_interval_ms(ui, version)
     version = util.safe_str(version)
+    local has_key = battle_parse.has_api_key()
     if version == "" or version == "0" then
-        return config.BATTLE_POLL_LOBBY_MS or 750
+        if has_key then
+            return config.BATTLE_POLL_LOBBY_MS or 1000
+        end
+        return config.BATTLE_POLL_LOBBY_MS_SLOW or 2000
     end
     if ui == nil then
-        return config.BATTLE_POLL_PREP_MS or 1000
+        if has_key then
+            return config.BATTLE_POLL_PREP_MS or 500
+        end
+        return config.BATTLE_POLL_PREP_MS_SLOW or 1000
     end
     local state_name = string.lower(util.safe_str(ui.state))
     if state_name == "active" then
-        return config.BATTLE_POLL_ACTIVE_MS or 300
+        if has_key then
+            return config.BATTLE_POLL_ACTIVE_MS or 500
+        end
+        return config.BATTLE_POLL_ACTIVE_MS_SLOW or 2000
     end
     if PREP_STATES[state_name] then
-        return config.BATTLE_POLL_PREP_MS or 500
+        if has_key then
+            return config.BATTLE_POLL_PREP_MS or 500
+        end
+        return config.BATTLE_POLL_PREP_MS_SLOW or 1000
     end
     if state_name == "finished" or state_name == "cancelled" then
         return config.BATTLE_POLL_PREP_MS or 500

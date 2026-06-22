@@ -16,7 +16,7 @@ local function battle_poll_priority()
     local applied = util.safe_str(state.battle_applied_version)
     if applied ~= "" and applied ~= "0" then return true end
     if state.battle_ui ~= nil then return true end
-    return true
+    return false
 end
 
 local function battle_queue_insert(item, kind)
