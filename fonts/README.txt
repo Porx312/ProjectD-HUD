@@ -1,9 +1,7 @@
-Fuentes embebidas — Archivo SemiExpanded (SIL Open Font License)
-Mismas tipografías que CMRT Essential HUD.
+Fuentes embebidas — BBH Bogle (SIL Open Font License)
 
 Archivos:
-- ArchivoSemiExpanded-Regular.ttf  → texto normal
-- ArchivoSemiExpanded-Medium.ttf   → tiempos, coche, combo
-- ArchivoSemiExpanded-Bold.ttf     → nombres, ranks, cabecera Top 10
+- BBHBogle-Regular.ttf  → todos los textos del HUD (Top 10, Profile, Rival, Battle)
+- BBH_Bogle/            → copia con OFL.txt
 
-Copia esta carpeta al instalar ProjectD-HUD en otro PC.
+Copia la carpeta fonts/ al instalar ProjectD-HUD en otro PC.

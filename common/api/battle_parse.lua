@@ -128,11 +128,13 @@ local function format_point_label(entry, local_steam_id)
     if reason == "" then return "" end
 
     local points = tonumber(entry.points)
-    if points == nil then points = 1 end
+    if points == nil and entry.point ~= nil then
+        points = tonumber(entry.point)
+    end
 
     local scorer = steam.normalize_steam_id(entry.scorer or entry.steamId or entry.steam_id)
     local me = steam.normalize_steam_id(local_steam_id)
-    if points > 0 then
+    if points ~= nil and points > 0 then
         if scorer ~= "" and me ~= "" and scorer == me then
             return reason .. " +" .. tostring(points)
         end
@@ -146,6 +148,26 @@ end
 
 local function event_label_from_entry(entry, local_steam_id)
     return format_point_label(entry, local_steam_id)
+end
+
+local function raw_event_label(raw, last_event, local_steam_id)
+    local direct = util.safe_str(raw.eventLabel or raw.event_label or raw.statusLabel or raw.status_label)
+    if direct ~= "" then
+        return format_reason_code(direct)
+    end
+
+    local from_event = event_label_from_entry(last_event, local_steam_id)
+    if from_event ~= "" then return from_event end
+
+    local status = string.lower(util.safe_str(raw.status))
+    if status ~= "" and status ~= "active" and status ~= "idle" and status ~= "arming" and status ~= "armed" then
+        return format_reason_code(status)
+    end
+    if status == "idle" then
+        return "IDLE"
+    end
+
+    return ""
 end
 
 local function parse_points_log(raw, local_steam_id)
@@ -449,8 +471,8 @@ function battle_parse.to_ui(raw, local_steam_id)
         if event_label == center then
             event_label = ""
         end
-    elseif is_active then
-        event_label = event_label_from_entry(last_event, local_steam_id)
+    elseif is_active or is_armed or state_name == "launching" then
+        event_label = raw_event_label(raw, last_event, local_steam_id)
         if event_label == "" and #points_log > 0 then
             event_label = points_log[#points_log]
         end

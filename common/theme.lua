@@ -1,4 +1,4 @@
---[[ ProjectD HUD — colores y tipografía (mismas fuentes que CMRT Essential HUD) ]]
+--[[ ProjectD HUD — colores y tipografía ]]
 
 local theme = {}
 
@@ -21,6 +21,7 @@ theme.colors = {
     battle_mode_bg = rgbm(0.06, 0.14, 0.32, 0.98),
     battle_gap_fill = rgbm(0.62, 0.10, 0.14, 0.95),
     battle_gap_track = rgbm(0.12, 0.04, 0.06, 0.55),
+    battle_gap_safe = rgbm(0.18, 0.72, 0.38, 0.95),
     tab_active    = rgbm(0.35, 0.78, 1.0, 0.38),
     tab_idle      = rgbm(1, 1, 1, 0.08),
 }
@@ -30,7 +31,8 @@ local fonts_ready = false
 local fonts_source = "unknown"
 
 local app_dir = ac.dirname()
-local FONT_FAMILY = "Archivo SemiExpanded"
+local FONT_FAMILY = "BBH Bogle"
+local FONT_FILE = "BBHBogle-Regular.ttf"
 
 local function system_font(name, weight)
     local font = ui.DWriteFont(name .. ":@System")
@@ -40,27 +42,38 @@ local function system_font(name, weight)
     return font
 end
 
+local function bundled_font_path()
+    local flat = app_dir .. "/fonts/" .. FONT_FILE
+    if io.fileExists(flat) then
+        return flat
+    end
+    local nested = app_dir .. "/fonts/BBH_Bogle/" .. FONT_FILE
+    if io.fileExists(nested) then
+        return nested
+    end
+    return nil
+end
+
+local function has_bundled_fonts()
+    return bundled_font_path() ~= nil
+end
+
 local function bundled_font(weight)
     return ui.DWriteFont(FONT_FAMILY .. ":/fonts;Weight=" .. weight)
 end
 
-local function has_bundled_fonts()
-    return io.fileExists(app_dir .. "/fonts/ArchivoSemiExpanded-Regular.ttf")
-        and io.fileExists(app_dir .. "/fonts/ArchivoSemiExpanded-Medium.ttf")
-        and io.fileExists(app_dir .. "/fonts/ArchivoSemiExpanded-Bold.ttf")
-end
-
---- Mismas fuentes que CMRT: Archivo SemiExpanded Medium / Bold.
+--- BBH Bogle (único peso Regular embebido; bold/medium usan la misma familia).
 function theme.ensure_fonts()
     if fonts_ready then return end
     fonts_ready = true
 
     if has_bundled_fonts() then
         fonts_source = "bundled"
-        theme.fonts.reg    = bundled_font("Regular")
-        theme.fonts.small  = bundled_font("Regular")
-        theme.fonts.medium = bundled_font("Medium")
-        theme.fonts.bold   = bundled_font("Bold")
+        local base = bundled_font("Regular")
+        theme.fonts.reg = base
+        theme.fonts.small = base
+        theme.fonts.medium = base
+        theme.fonts.bold = base
         return
     end
 

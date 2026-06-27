@@ -148,6 +148,19 @@ function images.corners_all()
     return corners_all()
 end
 
+local function full_tau()
+    return math.tau or (math.pi * 2)
+end
+
+--- Textura recortada en círculo perfecto (CSP ui.drawPie). Devuelve false si hay que usar fallback.
+function images.draw_texture_circle(center, radius, tex, tint)
+    if tex == nil or center == nil then return false end
+    radius = math.max(2, tonumber(radius) or 16)
+    if ui.drawPie == nil then return false end
+    ui.drawPie(center, radius, 0, full_tau(), tint or rgbm(1, 1, 1, 1), tex)
+    return true
+end
+
 local function first_existing(paths)
     for _, path in ipairs(paths) do
         if path ~= nil and io.fileExists(path) then return path end
@@ -193,6 +206,78 @@ function images.get_leaderboard_panel_overlay()
     return first_existing({
         app_dir .. "/assets/leaderboard_overlay.png",
         app_dir .. "/assets/leaderboard_gradient.png",
+    })
+end
+
+--- Battle HUD — fondo completo (assets/battle/bg.png).
+function images.get_battle_bg()
+    return first_existing({
+        app_dir .. "/assets/battle/bg.png",
+    })
+end
+
+--- Marco / contenedor del bar (debajo o encima del bg según diseño — se dibuja primero).
+function images.get_battle_container()
+    return first_existing({
+        app_dir .. "/assets/battle/container.png",
+        app_dir .. "/assets/battle/battle_container.png",
+    })
+end
+
+--- Centro battle: center_*.png según fase (matchmaking, countdown, …).
+function images.get_battle_center(state_key)
+    local key = string.lower(tostring(state_key or "matchmaking"))
+    local names = {
+        matchmaking = {
+            "center_matchmaking.png",
+            "center_looking.png",
+        },
+        vs = { "center_vs.png" },
+        countdown = { "center_countdown.png" },
+        points = { "center_points.png" },
+        result = {
+            "center-result.png",
+            "center_result.png",
+        },
+        draw = {
+            "center-draw.png",
+            "center_draw.png",
+        },
+        finished = { "center-result.png", "center_result.png", "center_points.png" },
+        cancelled = { "center_cancelled.png" },
+    }
+    local candidates = names[key] or names.matchmaking
+    local paths = {}
+    for _, name in ipairs(candidates) do
+        paths[#paths + 1] = app_dir .. "/assets/battle/" .. name
+    end
+    return first_existing(paths)
+end
+
+--- Overlay derecho sin rival (searching rival + avatar ?).
+function images.get_battle_searching_overlay()
+    return first_existing({
+        app_dir .. "/assets/battle/searching_rival_text_and_playeravatarUndefine.png",
+        app_dir .. "/assets/battle/searching_rival.png",
+    })
+end
+
+function images.get_battle_gap_track()
+    return first_existing({
+        app_dir .. "/assets/battle/gap_track.png",
+        app_dir .. "/assets/battle/gap_progress_bar.png",
+    })
+end
+
+function images.get_battle_gap_fill()
+    return first_existing({
+        app_dir .. "/assets/battle/gap_fill.png",
+    })
+end
+
+function images.get_battle_gap_bar()
+    return first_existing({
+        app_dir .. "/assets/battle/gap_progress_bar.png",
     })
 end
 

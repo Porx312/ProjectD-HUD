@@ -230,8 +230,103 @@ function mock.get_rival()
     return nil
 end
 
---- Battle HUD mock — active battle with 3D gap bar.
+--- Battle HUD mock — ac.storage("ProjectD-HUD:battle_mock_state", "matchmaking"|"vs"|"countdown"|"active"|"cancelled"|"result"|"draw")
 function mock.get_battle()
+    local key = string.lower(tostring(ac.storage("ProjectD-HUD:battle_mock_state", "active"):get()))
+    local player_left = {
+        name = "Ryosuke",
+        car_name = "rx7",
+        tier = 10,
+        avatar_url = avatar("Ryosuke Takahashi"),
+        role = "lead",
+    }
+    local player_right = {
+        name = "Takumi",
+        car_name = "ae86",
+        tier = 10,
+        avatar_url = avatar("Takumi Fujiwara"),
+        role = "chase",
+    }
+
+    if key == "matchmaking" then
+        return {
+            state = "pairing",
+            center_text = "MATCHMAKING",
+            mode = "LOOKING",
+            player_left = player_left,
+            player_right = { placeholder = true },
+        }
+    end
+
+    if key == "vs" then
+        return {
+            state = "armed",
+            center_text = "VS",
+            mode = "ARMED",
+            show_prep_scores = true,
+            score_left = 0,
+            score_right = 0,
+            player_left = player_left,
+            player_right = player_right,
+        }
+    end
+
+    if key == "countdown" then
+        return {
+            state = "arming",
+            center_text = "5",
+            mode = "ARMING",
+            countdown_hint = "CONTINUE: MAINTAIN  ·  CANCEL: BREAK FORMATION",
+            player_left = player_left,
+            player_right = player_right,
+        }
+    end
+
+    if key == "cancelled" then
+        return {
+            state = "cancelled",
+            status = "cancelled",
+            center_text = "CANCELLED",
+            mode = "CANCELLED",
+            end_label = "FORMATION BROKEN",
+            event_label = "FORMATION BROKEN",
+            player_left = player_left,
+            player_right = player_right,
+        }
+    end
+
+    if key == "result" then
+        return {
+            state = "finished",
+            status = "finished",
+            center_text = "WINNER",
+            score_left = 1,
+            score_right = 0,
+            winner_name = player_left.name,
+            winner_player = {
+                name = player_left.name,
+                tier = player_left.tier,
+                avatar_url = player_left.avatar_url,
+                car_name = player_left.car_name,
+            },
+            final_score_text = "1-0",
+            player_left = player_left,
+            player_right = player_right,
+        }
+    end
+
+    if key == "draw" then
+        return {
+            state = "finished",
+            status = "draw",
+            center_text = "DRAW",
+            score_left = 0,
+            score_right = 0,
+            player_left = player_left,
+            player_right = player_right,
+        }
+    end
+
     return {
         state = "active",
         center_text = "LEAD",
@@ -244,20 +339,8 @@ function mock.get_battle()
         gap3d_m = 125,
         disappear_gap_m = 250,
         event_label = "OVERTAKE +1",
-        player_left = {
-            name = "Ryosuke",
-            car_name = "rx7",
-            tier = 10,
-            avatar_url = avatar("Ryosuke Takahashi"),
-            role = "lead",
-        },
-        player_right = {
-            name = "Takumi",
-            car_name = "ae86",
-            tier = 10,
-            avatar_url = avatar("Takumi Fujiwara"),
-            role = "chase",
-        },
+        player_left = player_left,
+        player_right = player_right,
     }
 end
 

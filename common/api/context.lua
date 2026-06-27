@@ -206,6 +206,10 @@ function context.build_battle_server_name_candidates(ctx)
     local battle_override = util.trim_server_name(state.battle_server_override_storage:get())
     if battle_override ~= "" then add_both(battle_override) end
 
+    for _, fallback in ipairs(config.BATTLE_SERVER_DEFAULTS or {}) do
+        add_both(fallback)
+    end
+
     local override = util.trim_server_name(state.server_override_storage:get())
     if override ~= "" then add_both(override) end
 
@@ -221,10 +225,6 @@ function context.build_battle_server_name_candidates(ctx)
 
     if ctx ~= nil then
         add_both(ctx.server_name)
-    end
-
-    for _, fallback in ipairs(config.BATTLE_SERVER_DEFAULTS or {}) do
-        add_both(fallback)
     end
 
     if state.battle_last_resolved_server_name ~= nil and state.battle_last_resolved_server_name ~= "" then

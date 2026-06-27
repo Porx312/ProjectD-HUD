@@ -1,5 +1,6 @@
---[[ ProjectD — Battle HUD (live ac-data SSE /hud/battle/stream) ]]
+--[[ ProjectD — Battle HUD (repo SSE logic + local visuals) ]]
 
+local layout = require("common.layout")
 local theme = require("common.theme")
 local data = require("common.data")
 local draw = require("common.draw")
@@ -42,14 +43,31 @@ function mod.update() end
 
 function mod.main(dt)
     theme.ensure_fonts()
-    local battle = battle_data()
 
+    local battle = battle_data()
     if battle == nil then
         return
     end
 
     prefetch_avatars(battle)
-    draw.battle_block(vec2(0, 0), ui.windowSize(), battle)
+
+    local win_origin = vec2(0, 0)
+    local win_size = ui.windowSize()
+    if win_size.x <= 0 or win_size.y <= 0 then
+        return
+    end
+
+    local frame_o, bar_ps, gap_margin, gap_h = layout.battle_frame_fit(win_size, battle.show_gap == true)
+    if bar_ps.x <= 0 or bar_ps.y <= 0 then
+        return
+    end
+
+    local bar_o = win_origin + frame_o
+    draw.battle_panel(bar_o, bar_ps)
+    draw.battle_block(bar_o, bar_ps, battle, {
+        gap_margin = gap_margin,
+        gap_h = gap_h,
+    })
 end
 
 return mod

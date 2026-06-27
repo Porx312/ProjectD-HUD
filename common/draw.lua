@@ -141,25 +141,28 @@ function draw.card_panel(win_origin, win_size)
 end
 
 function draw.avatar_circle(pos, url, size)
+    if pos == nil then return end
+    size = math.max(4, math.floor(tonumber(size) or 32) + 0.5)
     theme.ensure_fonts()
-    local center = pos + vec2(size / 2, size / 2)
-    local radius = size / 2
-    local br = pos + vec2(size, size)
-    local corners = images.corners_all()
+    local center = pos + vec2(size * 0.5, size * 0.5)
+    local radius = size * 0.5
     local segs = math.max(32, math.floor(size * 0.5))
 
     ui.drawCircleFilled(center, radius, theme.colors.avatar_fill, segs)
 
     local tex = images.get_avatar(url)
     if tex ~= nil then
-        local uv1, uv2 = images.cover_uv(tex)
-        ui.drawImageRounded(tex, pos, br, theme.colors.white, uv1, uv2, radius, corners)
+        if images.draw_texture_circle(center, radius, tex, theme.colors.white) == false then
+            local br = pos + vec2(size, size)
+            local uv1, uv2 = images.cover_uv(tex)
+            ui.drawImageRounded(tex, pos, br, theme.colors.white, uv1, uv2, radius, images.corners_all())
+        end
     else
         local initial = url ~= nil and "…" or "?"
         local fs = math.max(11, size * 0.28)
         ui.pushDWriteFont(theme.fonts.bold)
         local tw = measure_text(theme.fonts.bold, initial, fs)
-        ui.dwriteDrawText(initial, fs, center - vec2(tw / 2, fs * 0.52), theme.colors.muted)
+        ui.dwriteDrawText(initial, fs, center - vec2(tw * 0.5, fs * 0.52), theme.colors.muted)
         ui.popDWriteFont()
     end
 
@@ -167,6 +170,8 @@ function draw.avatar_circle(pos, url, size)
 end
 
 function draw.tier_badge(pos, tier, tier_sz)
+    if pos == nil then return end
+    tier_sz = math.max(8, tonumber(tier_sz) or 24)
     theme.ensure_fonts()
     tier = tonumber(tier) or 0
     local path = images.get_tier_path(tier)
@@ -428,274 +433,16 @@ function draw.profile_block(win_origin, win_size, entry, extra)
     draw.profile_card(panel_o, ps, entry, opts)
 end
 
-local function battle_player_side(panel_o, panel_w, player, side, m)
-    theme.ensure_fonts()
-    player = player or {}
-    local pad = m.pad
-    local avatar_y = panel_o.y + (m.main_h - m.avatar) * 0.5
+local draw_battle = require("common.draw_battle")
 
-    if player.placeholder == true then
-        local placeholder_name = "Looking for opponent"
-        if side == "left" then
-            local avatar_x = panel_o.x + pad
-            ui.drawRectFilled(
-                vec2(avatar_x, avatar_y),
-                vec2(avatar_x + m.avatar, avatar_y + m.avatar),
-                theme.colors.battle_gap_track,
-                m.avatar * 0.5,
-                layout.corners_all()
-            )
-            ui.drawRect(
-                vec2(avatar_x, avatar_y),
-                vec2(avatar_x + m.avatar, avatar_y + m.avatar),
-                theme.colors.battle_border,
-                m.avatar * 0.5,
-                layout.corners_all(),
-                1
-            )
-            local tx = avatar_x + m.avatar + 8
-            local ty = panel_o.y + (m.main_h - m.name_fs) * 0.5
-            ui.pushDWriteFont(theme.fonts.medium)
-            ui.dwriteDrawText(placeholder_name, m.name_fs - 1, vec2(tx, ty), theme.colors.muted)
-            ui.popDWriteFont()
-        else
-            local avatar_x = panel_o.x + panel_w - pad - m.avatar
-            ui.drawRectFilled(
-                vec2(avatar_x, avatar_y),
-                vec2(avatar_x + m.avatar, avatar_y + m.avatar),
-                theme.colors.battle_gap_track,
-                m.avatar * 0.5,
-                layout.corners_all()
-            )
-            ui.drawRect(
-                vec2(avatar_x, avatar_y),
-                vec2(avatar_x + m.avatar, avatar_y + m.avatar),
-                theme.colors.battle_border,
-                m.avatar * 0.5,
-                layout.corners_all(),
-                1
-            )
-            ui.pushDWriteFont(theme.fonts.medium)
-            local name_w = measure_text(theme.fonts.medium, placeholder_name, m.name_fs - 1)
-            ui.popDWriteFont()
-            local ty = panel_o.y + (m.main_h - (m.name_fs - 1)) * 0.5
-            local tx = avatar_x - 8 - name_w
-            ui.pushDWriteFont(theme.fonts.medium)
-            ui.dwriteDrawText(placeholder_name, m.name_fs - 1, vec2(tx, ty), theme.colors.muted)
-            ui.popDWriteFont()
-        end
-        return
-    end
-
-    local url = images.resolve_url(player.name, player.avatar_url)
-    local name = theme.format_display_name(player.name)
-    local car = profile_car_name(player)
-
-    if side == "left" then
-        local avatar_x = panel_o.x + pad
-        draw.avatar_circle(vec2(avatar_x, avatar_y), url, m.avatar)
-
-        local tier_x = avatar_x + m.avatar - m.tier * 0.35
-        local tier_y = avatar_y + m.avatar - m.tier * 0.65
-        draw.tier_badge(vec2(tier_x, tier_y), player.tier, m.tier)
-
-        local tx = avatar_x + m.avatar + 8
-        local text_h = m.name_fs + 2 + m.car_fs
-        local ty = panel_o.y + (m.main_h - text_h) * 0.5
-
-        ui.pushDWriteFont(theme.fonts.bold)
-        ui.dwriteDrawText(name, m.name_fs, vec2(tx, ty), theme.colors.white)
-        ui.popDWriteFont()
-
-        ui.pushDWriteFont(theme.fonts.medium)
-        ui.dwriteDrawText(car, m.car_fs, vec2(tx, ty + m.name_fs + 2), theme.colors.muted)
-        ui.popDWriteFont()
-    else
-        local avatar_x = panel_o.x + panel_w - pad - m.avatar
-        draw.avatar_circle(vec2(avatar_x, avatar_y), url, m.avatar)
-
-        local tier_x = avatar_x - m.tier * 0.65
-        local tier_y = avatar_y + m.avatar - m.tier * 0.65
-        draw.tier_badge(vec2(tier_x, tier_y), player.tier, m.tier)
-
-        ui.pushDWriteFont(theme.fonts.bold)
-        local name_w = measure_text(theme.fonts.bold, name, m.name_fs)
-        ui.popDWriteFont()
-
-        ui.pushDWriteFont(theme.fonts.medium)
-        local car_w = measure_text(theme.fonts.medium, car, m.car_fs)
-        ui.popDWriteFont()
-
-        local text_h = m.name_fs + 2 + m.car_fs
-        local ty = panel_o.y + (m.main_h - text_h) * 0.5
-        local tx = avatar_x - 8 - math.max(name_w, car_w)
-
-        ui.pushDWriteFont(theme.fonts.bold)
-        ui.dwriteDrawText(name, m.name_fs, vec2(tx + math.max(name_w, car_w) - name_w, ty), theme.colors.white)
-        ui.popDWriteFont()
-
-        ui.pushDWriteFont(theme.fonts.medium)
-        ui.dwriteDrawText(car, m.car_fs, vec2(tx + math.max(name_w, car_w) - car_w, ty + m.name_fs + 2), theme.colors.muted)
-        ui.popDWriteFont()
-    end
+--- Fondo battle escalado (bg.png) sobre el rect de la barra.
+function draw.battle_panel(bar_origin, bar_size)
+    return draw_battle.battle_panel(bar_origin, bar_size)
 end
 
-local function battle_parse_placeholder()
-    return {
-        placeholder = true,
-        name = "Looking for opponent",
-        car_name = "",
-        tier = 0,
-    }
-end
-
---- Battle HUD: two players, center phase label, scores, 3D separation bar.
-function draw.battle_block(win_origin, win_size, battle)
-    theme.ensure_fonts()
-    battle = battle or {}
-    local m = layout.BATTLE_DESIGN
-    local panel_o = win_origin
-    local panel_w = win_size.x
-    local panel_h = win_size.y
-    local state_name = string.lower(tostring(battle.state or "pairing"))
-    local status_name = string.lower(tostring(battle.status or ""))
-    local is_draw = status_name == "draw"
-    local is_terminal = state_name == "finished" or state_name == "cancelled" or is_draw
-
-    local radius = math.min(panel_h * 0.5 - 0.5, m.main_h * 0.5)
-    local main_br = vec2(panel_o.x + panel_w, panel_o.y + m.main_h)
-    ui.drawRectFilled(panel_o, main_br, theme.colors.battle_bg, radius, layout.corners_all())
-    ui.drawRect(panel_o, main_br, theme.colors.battle_border, radius, layout.corners_all(), 1)
-
-    local left = battle.player_left or {}
-    local right = battle.player_right or battle_parse_placeholder()
-    battle_player_side(panel_o, panel_w, left, "left", m)
-    battle_player_side(panel_o, panel_w, right, "right", m)
-
-    local center_x = panel_o.x + panel_w * 0.5
-    local center_text = tostring(battle.center_text or battle.mode or "BATTLE")
-    local center_fs = m.mode_fs
-
-    if state_name == "arming" then
-        center_fs = 22
-    elseif state_name == "launching" then
-        center_fs = 18
-    elseif state_name == "finished" or state_name == "cancelled" or is_draw then
-        center_fs = 11
-        if #center_text > 22 then
-            center_fs = 9
-        elseif #center_text > 14 then
-            center_fs = 10
-        end
-    end
-
-    ui.pushDWriteFont(theme.fonts.bold)
-    local center_w = measure_text(theme.fonts.bold, center_text, center_fs)
-    ui.popDWriteFont()
-
-    local center_pad_x = 8
-    local center_pad_y = 3
-    local center_box_w = center_w + center_pad_x * 2
-    local center_box_h = center_fs + center_pad_y * 2
-    local center_x0 = center_x - center_box_w * 0.5
-    local center_y0 = panel_o.y + 8
-
-    ui.drawRectFilled(
-        vec2(center_x0, center_y0),
-        vec2(center_x0 + center_box_w, center_y0 + center_box_h),
-        theme.colors.battle_mode_bg,
-        4,
-        layout.corners_all()
-    )
-    ui.pushDWriteFont(theme.fonts.bold)
-    ui.dwriteDrawText(center_text, center_fs, vec2(center_x0 + center_pad_x, center_y0 + center_pad_y), theme.colors.white)
-    ui.popDWriteFont()
-
-    if battle.show_scores == true or state_name == "active" or is_terminal or battle.show_prep_scores == true then
-        local score_text = tostring(battle.score_left or 0) .. " - " .. tostring(battle.score_right or 0)
-        if is_terminal and not is_draw and battle.winner_name ~= nil and battle.winner_name ~= "" then
-            score_text = battle.winner_name .. " wins  " .. score_text
-        elseif is_terminal and is_draw then
-            score_text = "DRAW  " .. score_text
-        end
-        ui.pushDWriteFont(theme.fonts.bold)
-        local score_fs = state_name == "active" and m.score_fs or (m.score_fs - 2)
-        local score_w = measure_text(theme.fonts.bold, score_text, score_fs)
-        local score_y = panel_o.y + m.main_h - score_fs - 8
-        ui.dwriteDrawText(score_text, score_fs, vec2(center_x - score_w * 0.5, score_y), theme.colors.white)
-        ui.popDWriteFont()
-    end
-
-    local event_label = tostring(battle.event_label or "")
-    if event_label == "" and battle.end_label ~= nil then
-        event_label = tostring(battle.end_label)
-    end
-    local show_point_toast = false
-    if event_label ~= "" then
-        if state_name == "active" then
-            show_point_toast = true
-        elseif is_terminal and event_label ~= center_text then
-            show_point_toast = true
-        end
-    end
-    if show_point_toast then
-        ui.pushDWriteFont(theme.fonts.medium)
-        local ev_fs = is_terminal and 10 or 11
-        local ev_w = measure_text(theme.fonts.medium, event_label, ev_fs)
-        local ev_y = center_y0 + center_box_h + 2
-        local ev_color = is_terminal and theme.colors.accent or theme.colors.accent
-        ui.dwriteDrawText(event_label, ev_fs, vec2(center_x - ev_w * 0.5, ev_y), ev_color)
-        ui.popDWriteFont()
-    end
-
-    local points_log = battle.points_log
-    if type(points_log) == "table" and #points_log > 0 and state_name == "active" then
-        local feed_y = center_y0 + center_box_h + (show_point_toast and 16 or 2)
-        local feed_start = math.max(1, #points_log - 2)
-        for i = feed_start, #points_log do
-            local feed_label = points_log[i]
-            if feed_label ~= nil and feed_label ~= "" and feed_label ~= event_label then
-                ui.pushDWriteFont(theme.fonts.medium)
-                local feed_w = measure_text(theme.fonts.medium, feed_label, 9)
-                ui.dwriteDrawText(feed_label, 9, vec2(center_x - feed_w * 0.5, feed_y), theme.colors.muted)
-                ui.popDWriteFont()
-                feed_y = feed_y + 12
-            end
-        end
-    end
-
-    if battle.show_gap == true then
-        local gap = battle.gap or {}
-        local gap_current = math.max(0, tonumber(gap.current or battle.gap3d_m) or 0)
-        local gap_max = math.max(1, tonumber(gap.max or battle.disappear_gap_m) or 250)
-        local gap_ratio = math.min(1, gap_current / gap_max)
-
-        local gap_w = math.min(panel_w * 0.88, 340)
-        local gap_h = m.gap_h - 6
-        local gap_x = center_x - gap_w * 0.5
-        local gap_y = panel_o.y + m.main_h - m.gap_overlap
-        local gap_br = vec2(gap_x + gap_w, gap_y + gap_h)
-
-        ui.drawRectFilled(vec2(gap_x, gap_y), gap_br, theme.colors.battle_gap_track, 6, layout.corners_all())
-        if gap_ratio > 0 then
-            local fill_w = math.max(6, gap_w * gap_ratio)
-            ui.drawRectFilled(
-                vec2(gap_x, gap_y),
-                vec2(gap_x + fill_w, gap_y + gap_h),
-                theme.colors.battle_gap_fill,
-                6,
-                layout.corners_all()
-            )
-        end
-        ui.drawRect(vec2(gap_x, gap_y), gap_br, theme.colors.battle_border, 6, layout.corners_all(), 1)
-
-        local gap_label = string.format("%dm / %dm", math.floor(gap_current + 0.5), math.floor(gap_max + 0.5))
-        ui.pushDWriteFont(theme.fonts.medium)
-        local gap_label_w = measure_text(theme.fonts.medium, gap_label, m.gap_label_fs)
-        local gap_label_y = gap_y + (gap_h - m.gap_label_fs) * 0.5
-        ui.dwriteDrawText(gap_label, m.gap_label_fs, vec2(center_x - gap_label_w * 0.5, gap_label_y), theme.colors.white)
-        ui.popDWriteFont()
-    end
+--- Capas battle sobre la barra; gap debajo si opts.gap_h > 0.
+function draw.battle_block(panel_o, panel_size, battle, opts)
+    draw_battle.battle_block(panel_o, panel_size, battle, opts)
 end
 
 return draw

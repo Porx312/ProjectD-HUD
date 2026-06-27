@@ -52,6 +52,11 @@ function status.get_status()
         battle_sse = state.battle_sse_connected == true,
         battle_sse_mode = util.safe_str(state.battle_sse_mode),
         battle_snap_at = state.battle_last_snapshot_at or 0,
+        battle_event_name = util.safe_str(state.battle_last_event_name),
+        battle_sse_summary = util.safe_str(state.battle_last_sse_summary),
+        battle_ui_summary = util.safe_str(state.battle_last_ui_summary),
+        battle_stage = util.safe_str(state.battle_last_debug_stage),
+        battle_clear_reason = util.safe_str(state.battle_last_clear_reason),
         track_id = util.safe_str(ctx.track_id),
         layout_id = util.safe_str(ctx.layout_id),
         context_ready = context.context_is_ready(ctx),
@@ -115,8 +120,14 @@ function status.get_status_message(kind)
         if state.battle_last_error == "sse_no_data" then
             return "Battle SSE: no data (set battle_server_name=testing)"
         end
+        if state.battle_last_error == "sse_stalled" then
+            return "Battle SSE stalled - reconnecting"
+        end
         if state.battle_last_error == "missing_server_name" then
             return "No server name — set ProjectD-HUD:battle_server_name (e.g. testing)"
+        end
+        if st.battle_stage ~= "" then
+            return "Battle debug: " .. st.battle_stage
         end
         return nil
     elseif state.fetch_pending or state.profile_fetch_pending then
