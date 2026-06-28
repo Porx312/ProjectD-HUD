@@ -22,8 +22,7 @@ end
 
 local function profile_car_name(player)
     if player == nil then return "" end
-    local car = player.car_name or player.car_id or ""
-    return theme.format_display_name(car)
+    return theme.format_car_label(player.car_name, player.car_id)
 end
 
 local function draw_text_centered(text, fs, point, color, font)
@@ -90,7 +89,7 @@ local function should_show_searching(battle)
 end
 
 local function should_show_center_scores(battle, phase_state, is_terminal)
-    if is_terminal then return true end
+    if is_terminal then return false end
     if battle.show_scores == true then return true end
     if battle.show_prep_scores == true then return true end
     if phase_state == "active" then return true end
@@ -136,27 +135,7 @@ local function draw_avatar_circle(pos, url, size)
 end
 
 local function draw_tier_badge(pos, tier, tier_sz)
-    if pos == nil then return end
-    tier_sz = math.max(8, tonumber(tier_sz) or 24)
-    theme.ensure_fonts()
-    tier = tonumber(tier) or 0
-    local path = images.get_tier_path(tier)
-
-    if path ~= nil then
-        ui.drawImage(path, pos, pos + vec2(tier_sz, tier_sz))
-        return
-    end
-
-    local center = pos + vec2(tier_sz / 2, tier_sz / 2)
-    ui.drawCircleFilled(center, tier_sz / 2, theme.colors.tier_fallback, 16)
-    ui.drawCircle(center, tier_sz / 2, theme.colors.white, 16, 1)
-
-    local label = tostring(tier)
-    ui.pushDWriteFont(theme.fonts.bold)
-    local fs = math.max(12, tier_sz * 0.38)
-    local tw = measure_text(theme.fonts.bold, label, fs)
-    ui.dwriteDrawText(label, fs, pos + vec2((tier_sz - tw) / 2, (tier_sz - fs) / 2), theme.colors.white)
-    ui.popDWriteFont()
+    images.draw_tier_badge(pos, tier, tier_sz)
 end
 
 function draw_battle.battle_panel(bar_origin, bar_size)
@@ -216,10 +195,57 @@ local function draw_beside_avatar_text(avatar_o, aw, ah, side, name, car, m)
     end
 end
 
-local function draw_avatar_tier(avatar_o, aw, ah, tier, tier_sz)
-    local tx = avatar_o.x + aw * 0.5 - tier_sz * 0.5
-    local ty = avatar_o.y + ah - tier_sz * 1.08
-    draw_tier_badge(vec2(tx, ty), tier, tier_sz)
+local function format_elo_text(elo)
+    local n = tonumber(elo)
+    if n == nil or n <= 0 then return "—" end
+    return tostring(math.floor(n + 0.5))
+end
+
+local function draw_avatar_stats_chip(circle_o, circle_sz, side, player, m)
+    if circle_o == nil then return end
+    theme.ensure_fonts()
+
+    local tier = tonumber(player.tier) or 0
+    local elo_text = format_elo_text(player.elo)
+    local tier_sz = m.chip_tier_sz
+    local elo_fs = m.chip_elo_fs
+    local pad = m.chip_pad
+    local gap = m.chip_inner_gap
+
+    ui.pushDWriteFont(theme.fonts.medium)
+    local elo_w = measure_text(theme.fonts.medium, elo_text, elo_fs)
+    ui.popDWriteFont()
+
+    local row_h = math.max(tier_sz, elo_fs)
+    local chip_h = row_h + pad * 2
+    local chip_w = pad + tier_sz + gap + elo_w + pad
+    local chip_o = layout.battle_avatar_chip_origin(circle_o, circle_sz, side, chip_w, chip_h, m.scale)
+    local radius = math.max(m.chip_radius, chip_h * 0.45)
+
+    ui.drawRectFilled(
+        chip_o,
+        chip_o + vec2(chip_w, chip_h),
+        rgbm(0, 0, 0, 0.85),
+        radius,
+        layout.corners_all()
+    )
+
+    local tier_y = pad + (row_h - tier_sz) * 0.5
+    local elo_y = pad + (row_h - elo_fs) * 0.5
+
+    draw_tier_badge(
+        chip_o + vec2(pad, tier_y),
+        tier,
+        tier_sz
+    )
+    draw_text_anchored(
+        elo_text,
+        elo_fs,
+        vec2(chip_o.x + pad + tier_sz + gap, chip_o.y + elo_y),
+        "left",
+        theme.colors.white,
+        theme.fonts.medium
+    )
 end
 
 local function battle_player_layer(panel_o, panel_size, player, side, m, d)
@@ -236,16 +262,20 @@ local function battle_player_layer(panel_o, panel_size, player, side, m, d)
     local url = images.resolve_url(player.name, player.avatar_url)
     local circle_o, circle_sz = layout.battle_avatar_circle(panel_o, panel_size, side)
     draw_avatar_circle(circle_o, url, circle_sz)
+    draw_avatar_stats_chip(circle_o, circle_sz, side, player, m)
 
     local name = theme.format_display_name(player.name)
     local car = profile_car_name(player)
     draw_beside_avatar_text(circle_o, circle_sz, circle_sz, side, name, car, m)
-    draw_avatar_tier(circle_o, circle_sz, circle_sz, player.tier, m.tier_sz)
 end
 
 local function should_show_live_event_top(phase_state, is_terminal)
     if is_terminal then return false end
     return phase_state == "active" or phase_state == "armed" or phase_state == "launching"
+end
+
+local function util_safe_str(s)
+    return tostring(s or "")
 end
 
 local function live_event_differs_from_center(event_label, center_text)
@@ -255,10 +285,6 @@ local function live_event_differs_from_center(event_label, center_text)
     if upper_event == upper_center then return false end
     if upper_center == "ACTIVE" and upper_event == "ACTIVE" then return false end
     return true
-end
-
-local function util_safe_str(s)
-    return tostring(s or "")
 end
 
 local function draw_phase_label_box(panel_o, panel_size, text, fs, pt, m)
@@ -387,7 +413,9 @@ local function battle_center_text_block(panel_o, panel_size, battle, m, d, phase
     if should_show_center_scores(battle, phase_state, is_terminal) then
         local sl = layout.battle_center_point(panel_o, panel_size, d.center_score_left)
         local sr = layout.battle_center_point(panel_o, panel_size, d.center_score_right)
+        local vs_pt = layout.battle_center_point(panel_o, panel_size, d.center_score_vs)
         draw_text_centered(tostring(battle.score_left or 0), m.score_fs, sl, theme.colors.white, theme.fonts.bold)
+        draw_text_centered("VS", m.score_vs_fs, vs_pt, theme.colors.battle_vs, theme.fonts.bold)
         draw_text_centered(tostring(battle.score_right or 0), m.score_fs, sr, theme.colors.white, theme.fonts.bold)
     end
 
@@ -409,10 +437,10 @@ local function battle_center_text_block(panel_o, panel_size, battle, m, d, phase
     if is_terminal and is_draw then
         local label_pt = layout.battle_center_point(panel_o, panel_size, d.center_draw_label)
         local score_pt = layout.battle_center_point(panel_o, panel_size, d.center_draw_score)
-        draw_text_centered("DRAW", math.max(m.draw_label_fs, panel_size.y * 0.3), label_pt, theme.colors.white, theme.fonts.bold)
+        draw_text_centered("DRAW", math.max(m.draw_label_fs, panel_size.y * 0.6), label_pt, theme.colors.white, theme.fonts.bold)
         draw_text_centered(
             string.format("%d-%d", tonumber(battle.score_left) or 0, tonumber(battle.score_right) or 0),
-            math.max(m.draw_score_fs, panel_size.y * 0.18),
+            math.max(m.draw_score_fs, panel_size.y * 0.36),
             score_pt,
             theme.colors.white,
             theme.fonts.bold
@@ -430,41 +458,20 @@ local function battle_center_text_block(panel_o, panel_size, battle, m, d, phase
         end
         local label_pt = layout.battle_center_point(panel_o, panel_size, d.center_draw_label)
         local score_pt = layout.battle_center_point(panel_o, panel_size, d.center_draw_score)
-        draw_text_centered(winner, math.max(m.result_name_fs, panel_size.y * 0.18), label_pt, theme.colors.white, theme.fonts.bold)
+        draw_text_centered(winner, math.max(m.result_name_fs, panel_size.y * 0.36), label_pt, theme.colors.white, theme.fonts.bold)
         draw_text_centered(
             tostring(battle.final_score_text or string.format("%d-%d", tonumber(battle.score_left) or 0, tonumber(battle.score_right) or 0)),
-            math.max(m.result_score_fs, panel_size.y * 0.15),
+            math.max(m.result_score_fs, panel_size.y * 0.30),
             score_pt,
             theme.colors.white,
             theme.fonts.bold
         )
+        return
     elseif is_terminal and phase_state == "cancelled" then
         local msg = event_label ~= "" and event_label or center_text
         if msg == "" then msg = "CANCELLED" end
         local pt = layout.battle_center_point(panel_o, panel_size, d.center_draw_label)
-        draw_text_centered(msg, math.max(m.event_fs, panel_size.y * 0.16), pt, theme.colors.accent, theme.fonts.bold)
-    elseif event_label ~= "" then
-        local show_toast = should_show_live_event_top(phase_state, is_terminal)
-            or (is_terminal and event_label ~= center_text)
-        if show_toast then
-            local ept = layout.battle_center_point(panel_o, panel_size, d.center_event)
-            local ev_fs = is_terminal and math.max(m.event_fs * 0.9, panel_size.y * 0.12) or m.event_fs
-            draw_text_centered(event_label, ev_fs, ept, theme.colors.accent, theme.fonts.bold)
-        end
-    end
-
-    local points_log = battle.points_log
-    if type(points_log) == "table" and #points_log > 0 and phase_state == "active" then
-        local feed_pt = layout.battle_center_point(panel_o, panel_size, d.center_event)
-        local feed_y = feed_pt.y + m.event_fs * 1.1
-        local feed_start = math.max(1, #points_log - 2)
-        for i = feed_start, #points_log do
-            local feed_label = points_log[i]
-            if feed_label ~= nil and feed_label ~= "" and feed_label ~= event_label then
-                draw_text_centered(feed_label, math.max(9, m.hint_fs * 0.85), vec2(feed_pt.x, feed_y), theme.colors.muted, theme.fonts.medium)
-                feed_y = feed_y + m.hint_fs * 1.05
-            end
-        end
+        draw_text_centered(msg, math.max(m.event_fs * 2, panel_size.y * 0.32), pt, theme.colors.accent, theme.fonts.bold)
     end
 end
 

@@ -1,4 +1,4 @@
---[[ Session API response parsing and leaderboard entry copy. ]]
+--[[ Session API response parsing (time attack: players[] + profile, no leaderboard). ]]
 
 local state = require("common.api.state")
 local util = require("common.api.util")
@@ -6,6 +6,16 @@ local steam = require("common.api.steam")
 local profile = require("common.api.profile")
 
 local parse = {}
+
+local function set_parse_error(reason)
+    reason = tostring(reason or "")
+    if reason == "" then return end
+    if util.is_presence_fatal(reason) then
+        util.apply_presence_error(reason)
+        return
+    end
+    state.last_error = reason
+end
 
 local function iter_players(players)
     local list = {}
@@ -28,7 +38,8 @@ function parse.response_is_ok(data)
     if data.error ~= nil then return false end
     if data.ok == false then return false end
     if data.ok == true then return true end
-    if data.leaderboard ~= nil then return true end
+    if data.players ~= nil then return true end
+    if data.profile ~= nil then return true end
     return false
 end
 
@@ -37,9 +48,9 @@ function parse.normalize_session_response(data, steam_id)
 
     if not parse.response_is_ok(data) then
         if data ~= nil and data.error ~= nil then
-            state.last_error = tostring(data.error)
+            set_parse_error(data.error)
         elseif data ~= nil and data.reason ~= nil then
-            state.last_error = tostring(data.reason)
+            set_parse_error(data.reason)
         end
         return nil
     end
@@ -50,76 +61,29 @@ function parse.normalize_session_response(data, steam_id)
     local out = {
         ok = true,
         context = data.context,
-        leaderboard = data.leaderboard,
-        profile = profile.coalesce_profile(data.profile),
+        profile = profile.coalesce_from_api(data),
     }
 
-    local player_profile, player_row = profile.pick_player_profile(data.players, steam_id)
+    local player_profile, player_row = profile.pick_player_profile(data.players, steam_id, data)
     if player_row ~= nil then
         if player_row.context ~= nil then out.context = player_row.context end
-        if player_profile ~= nil then out.profile = player_profile end
+        if player_profile ~= nil then
+            out.profile = profile.merge_profiles(out.profile, player_profile)
+        end
         profile.apply_player_lookup_error(player_row, out.profile, steam_id)
     elseif out.profile == nil and data.context ~= nil then
         state.last_error = "profile_unavailable"
     end
 
-    if out.profile ~= nil and out.profile.rival == nil and out.leaderboard ~= nil then
-        local derived = profile.derive_rival_from_leaderboard(out.profile, out.leaderboard)
-        if derived ~= nil then
-            out.profile.rival = derived
+    if out.profile ~= nil then
+        if out.profile.isInvalidated == true then
+            state.last_error = "user_invalidated"
+            out.profile = nil
+        else
+            state.last_error = nil
         end
     end
 
-    if out.profile ~= nil then
-        state.last_error = nil
-    end
-
-    return out
-end
-
-function parse.coalesce_leaderboard(raw)
-    if raw == nil or type(raw) ~= "table" then return nil end
-    if raw.leaderboard ~= nil and type(raw.leaderboard) == "table" then
-        return raw.leaderboard
-    end
-    if raw.entries ~= nil then
-        return {
-            title = raw.title or "Top 10",
-            map = raw.map or "",
-            layout = raw.layout or "",
-            filters = raw.filters,
-            entries = raw.entries,
-        }
-    end
-    return nil
-end
-
-function parse.count_ui_entries(list)
-    return util.count_ui_rows(parse.copy_entries(list))
-end
-
-function parse.copy_entries(list)
-    local out = {}
-    if list == nil then return out end
-
-    local function add(entry)
-        if type(entry) ~= "table" then return end
-        local i = 0
-        while out[i] ~= nil do i = i + 1 end
-        out[i] = {
-            rank = entry.rank or 0,
-            name = entry.name or "?",
-            tier = tonumber(entry.tier) or 0,
-            lap_ms = entry.lap_ms or entry.best_lap_ms or 0,
-            car_name = entry.car_name or "",
-            avatar_url = entry.avatar_url,
-        }
-    end
-
-    for _, entry in ipairs(list) do add(entry) end
-    if out[0] == nil then
-        for _, entry in pairs(list) do add(entry) end
-    end
     return out
 end
 

@@ -8,14 +8,18 @@ local images = {}
 local avatar_textures = {}   ---@type table<string, ui.ImageSource|string|false|nil>
 local avatar_loading = {}    ---@type table<string, boolean>
 local avatar_pending = {}    ---@type table<string, boolean>
+local avatar_failed_at = {}  ---@type table<string, number>
+local AVATAR_RETRY_SEC = 12
 
-local function api_web_busy()
+local function web_slots_full()
+    local ok_wq, web_queue = pcall(require, "common.api.web_queue")
+    if ok_wq and web_queue ~= nil and web_queue.inflight_count ~= nil then
+        return web_queue.inflight_count() >= 2
+    end
     local ok, st = pcall(require, "common.api.state")
     if not ok or st == nil then return false end
-    if st.fetch_pending or st.profile_fetch_pending then return true end
-    if st.web_inflight ~= nil then return true end
-    if st.web_queue ~= nil and #st.web_queue > 0 then return true end
-    return false
+    if st.web_stream ~= nil and st.web_inflight ~= nil then return true end
+    return st.web_inflight ~= nil and st.web_stream ~= nil
 end
 local tier_textures = {}     ---@type table<number, string?>
 
@@ -48,15 +52,24 @@ function images.placeholder_url(name)
     return "https://api.dicebear.com/7.x/notionists/png?seed=" .. seed .. "&size=128"
 end
 
+--- URL to display/fetch: real avatar when API provides one; dicebear only if missing.
 function images.resolve_url(name, url)
-    if url ~= nil and url ~= "" and avatar_textures[url] ~= false then
+    if url ~= nil and url ~= "" then
         return url
     end
     return images.placeholder_url(name)
 end
 
+--- Queue download for the real avatar (or placeholder when URL absent).
+function images.prefetch_avatar(name, url)
+    local target = images.resolve_url(name, url)
+    if target ~= nil and target ~= "" then
+        images.request_avatar(target)
+    end
+end
+
 function images.get_tier_path(tier)
-    local n = math.max(0, math.min(10, math.floor(tier)))
+    local n = math.max(0, math.min(10, math.floor(tonumber(tier) or 0)))
     if tier_textures[n] == nil then
         local path = tier_asset_path(n)
         if io.fileExists(path) then
@@ -69,29 +82,81 @@ function images.get_tier_path(tier)
     return tier_textures[n]
 end
 
+--- Dibuja badge de tier: fallback numérico siempre + PNG encima si existe.
+function images.draw_tier_badge(pos, tier, tier_sz)
+    if pos == nil then return end
+    tier_sz = math.max(10, tonumber(tier_sz) or 24)
+    tier = math.max(0, math.min(10, math.floor(tonumber(tier) or 0)))
+
+    local ok_theme, theme = pcall(require, "common.theme")
+    if ok_theme and theme.ensure_fonts ~= nil then
+        theme.ensure_fonts()
+    end
+
+    local center = pos + vec2(tier_sz / 2, tier_sz / 2)
+    local fallback_col = ok_theme and theme.colors.tier_fallback or rgbm(0.85, 0.15, 0.12, 1)
+    ui.drawCircleFilled(center, tier_sz / 2, fallback_col, 16)
+    ui.drawCircle(center, tier_sz / 2, rgbm(1, 1, 1, 1), 16, 1)
+
+    local label = tostring(tier)
+    local fs = math.max(10, tier_sz * 0.42)
+    local font = ok_theme and theme.fonts.bold or "Orbitron;Weight=Bold"
+    ui.pushDWriteFont(font)
+    local tw = ui.measureDWriteText(label, fs).x
+    ui.dwriteDrawText(label, fs, pos + vec2((tier_sz - tw) / 2, (tier_sz - fs) / 2), rgbm(1, 1, 1, 1))
+    ui.popDWriteFont()
+
+    local path = images.get_tier_path(tier)
+    if path ~= nil then
+        ui.drawImage(path, pos, pos + vec2(tier_sz, tier_sz))
+    end
+end
+
 function images.request_avatar(url)
     if url == nil or url == "" then return end
-    if avatar_textures[url] ~= nil or avatar_loading[url] then return end
-    if api_web_busy() then
+    local cached = avatar_textures[url]
+    if cached ~= nil and cached ~= false then return end
+    if avatar_loading[url] then return end
+    if cached == false then
+        local failed_at = avatar_failed_at[url] or 0
+        if (os.clock() - failed_at) < AVATAR_RETRY_SEC then return end
+        avatar_textures[url] = nil
+    end
+    if web_slots_full() then
         avatar_pending[url] = true
         return
     end
     avatar_loading[url] = true
 
+    local ok_util, util = pcall(require, "common.api.util")
     local ok_wq, web_queue = pcall(require, "common.api.web_queue")
     local function on_avatar(err, response)
         avatar_loading[url] = false
-        if err ~= nil or response == nil or response.status ~= 200 then
+        local ok_http = ok_util and util.http_response_ok(response)
+            or (response ~= nil and (response.status == nil or response.status == 200))
+        if ok_util and util.is_web_error(err) then ok_http = false end
+        if err ~= nil and ok_util and not util.is_web_error(err) and response == nil then
+            ok_http = true
+            response = { status = 200, body = err }
+        end
+        if not ok_http then
             avatar_textures[url] = false
+            avatar_failed_at[url] = os.clock()
             return
         end
-        local ok, tex = pcall(function()
-            return ui.decodeImage(response.body)
-        end)
+        local body = ok_util and util.response_body(response) or (response and response.body)
+        if body == nil or body == "" then
+            avatar_textures[url] = false
+            avatar_failed_at[url] = os.clock()
+            return
+        end
+        local ok, tex = pcall(ui.decodeImage, body)
         if ok and tex ~= nil then
             avatar_textures[url] = tex
+            avatar_failed_at[url] = nil
         else
             avatar_textures[url] = false
+            avatar_failed_at[url] = os.clock()
         end
     end
 
@@ -102,16 +167,19 @@ function images.request_avatar(url)
     else
         avatar_loading[url] = false
         avatar_textures[url] = false
+        avatar_failed_at[url] = os.clock()
     end
 end
 
---- Flush one deferred avatar per frame after API requests (CSP max 2 web.get).
 function images.tick()
-    if api_web_busy() then return end
+    if web_slots_full() then return end
+    local started = 0
     for pending_url, _ in pairs(avatar_pending) do
+        if web_slots_full() then break end
         avatar_pending[pending_url] = nil
         images.request_avatar(pending_url)
-        return
+        started = started + 1
+        if started >= 2 then break end
     end
 end
 
@@ -206,6 +274,13 @@ function images.get_leaderboard_panel_overlay()
     return first_existing({
         app_dir .. "/assets/leaderboard_overlay.png",
         app_dir .. "/assets/leaderboard_gradient.png",
+    })
+end
+
+--- Fondo de filas del HUD Competition / rivals.
+function images.get_competition_rivals_overlay()
+    return first_existing({
+        app_dir .. "/assets/overlay_rivals.png",
     })
 end
 

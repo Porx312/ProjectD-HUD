@@ -94,40 +94,162 @@ function util.decode_json(body)
     return data
 end
 
+--- Presence / session errors from ac-data (404) — do not retry.
+function util.is_presence_fatal(reason)
+    return reason == "player_not_connected"
+        or reason == "not_managed_server"
+        or reason == "players_on_different_servers"
+end
+
+function util.presence_message(reason)
+    if reason == "player_not_connected" then return "Not on a ProjectD server" end
+    if reason == "not_managed_server" then return "Server not managed by ProjectD" end
+    if reason == "players_on_different_servers" then return "Players on different servers" end
+    return nil
+end
+
+--- Cached profile still valid for display.
+function util.has_usable_profile_cache()
+    local ok, profile_mod = pcall(require, "common.api.profile")
+    if not ok or profile_mod == nil then return false end
+    if state.cached_bundle == nil then return false end
+    local p = profile_mod.coalesce_profile(state.cached_bundle.profile)
+    return p ~= nil and p.isInvalidated ~= true
+end
+
+function util.is_online_with_steam()
+    local ok_ctx, context = pcall(require, "common.api.context")
+    if not ok_ctx or context == nil then return false end
+    local ok, ctx = pcall(context.read_session_context)
+    if not ok or ctx == nil then return false end
+    if not context.context_is_ready(ctx) then return false end
+    if ctx.is_online == true then return true end
+    if context.is_online_session ~= nil and context.is_online_session() then return true end
+    return false
+end
+
+--- Redis presence can expire while the player is still in AC online / battle — do not treat as disconnected.
+function util.ignore_presence_error(reason)
+    if not util.is_presence_fatal(reason) then return false end
+    if reason == "not_managed_server" or reason == "players_on_different_servers" then
+        return false
+    end
+
+    if reason == "player_not_connected" and util.is_online_with_steam() then
+        return true
+    end
+
+    if util.has_usable_profile_cache() then return true end
+
+    local ok, bf = pcall(require, "common.api.battle_fetch")
+    if ok and bf.is_session_live ~= nil and bf.is_session_live() then return true end
+
+    if (state.battle_last_snapshot_at or 0) > 0 or state.battle_ui ~= nil then return true end
+    if (state.cached_at or 0) > 0 and util.is_online_with_steam() then return true end
+
+    return false
+end
+
+function util.should_show_presence_error(reason)
+    if not util.is_presence_fatal(reason) then return false end
+    return not util.ignore_presence_error(reason)
+end
+
+function util.apply_presence_error(reason)
+    reason = tostring(reason or "")
+    if util.ignore_presence_error(reason) then
+        ac.debug("ProjectD-HUD presence", "ignored: " .. reason)
+        return true
+    end
+    state.last_error = reason
+    return true
+end
+
+function util.clear_stale_presence_error()
+    if util.is_presence_fatal(state.last_error) and util.ignore_presence_error(state.last_error) then
+        state.last_error = nil
+    end
+    if util.is_presence_fatal(state.battle_last_error) and util.ignore_presence_error(state.battle_last_error) then
+        state.battle_last_error = nil
+    end
+end
+
+function util.note_presence_ok()
+    if state.last_error == "player_not_connected" then
+        state.last_error = nil
+    end
+end
+
+--- Battle SSE connect errors that must not reconnect.
+function util.is_battle_fatal(reason)
+    if util.is_presence_fatal(reason) and util.ignore_presence_error(reason) then
+        return false
+    end
+    if util.is_presence_fatal(reason) then return true end
+    return reason == "Battle HUD SSE disabled"
+        or reason == "Unauthorized"
+        or reason == "steamId is required"
+end
+
+function util.battle_error_message(reason)
+    local presence = util.presence_message(reason)
+    if presence ~= nil then return presence end
+    if reason == "Battle HUD SSE disabled" then return "Battle HUD unavailable" end
+    if reason == "Unauthorized" then return "Battle authorization failed" end
+    if reason == "steamId is required" then return "Steam ID required" end
+    return nil
+end
+
+local function api_error_reason(raw)
+    if raw == nil or type(raw) ~= "table" then return nil end
+    if raw.ok == false and raw.reason ~= nil then
+        return tostring(raw.reason)
+    end
+    if raw.error ~= nil then
+        return tostring(raw.error)
+    end
+    if raw.reason ~= nil then
+        return tostring(raw.reason)
+    end
+    return nil
+end
+
 --- Parse ac-data response even when HTTP status is 404 (body is often { ok:false, reason }).
 function util.read_api_response(err, response)
     if util.is_web_error(err) then
-        return nil, "network_error", false
+        return nil, "network_error"
     end
 
     local code = util.http_status_code(response)
     local raw = util.parse_json_body(util.response_body(response))
     if raw == nil and type(response) == "table" then
-        if response.ok ~= nil or response.reason ~= nil or response.entries ~= nil or response.leaderboard ~= nil then
+        if response.ok ~= nil or response.reason ~= nil or response.error ~= nil
+            or response.players ~= nil or response.profile ~= nil then
             raw = response
         end
     end
 
-    if raw ~= nil and raw.ok == false then
-        local reason = tostring(raw.reason or "api_error")
-        local retry_server = reason == "server_not_found" or reason == "track_not_found"
-        return raw, reason, retry_server
+    local err_reason = api_error_reason(raw)
+    if err_reason ~= nil and raw ~= nil and raw.ok == false then
+        return raw, err_reason
+    end
+
+    if code == 403 and err_reason ~= nil then
+        return raw, err_reason
     end
 
     if code ~= nil and code ~= 200 then
-        if raw ~= nil and raw.reason ~= nil then
-            local reason = tostring(raw.reason)
-            return raw, reason, reason == "server_not_found" or reason == "track_not_found"
+        if err_reason ~= nil then
+            return raw, err_reason
         end
-        local retry = code == 404 or code == 502 or code == 503 or code == 504
-        return raw, "http_" .. tostring(code), retry
+        return raw, "http_" .. tostring(code)
     end
 
     if raw == nil and util.http_response_ok(response) then
-        return nil, "json_parse_failed", false
+        return nil, "json_parse_failed"
     end
 
-    return raw, nil, false
+    return raw, nil
 end
 
 function util.url_encode(str)

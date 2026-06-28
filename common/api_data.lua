@@ -1,39 +1,49 @@
 ﻿--[[ ProjectD HUD — live data from ac-data API. Interface = mock_data.lua ]]
 
-local config = require("common.config")
 local state = require("common.api.state")
 local util = require("common.api.util")
 local context = require("common.api.context")
 local profile = require("common.api.profile")
-local parse = require("common.api.parse")
 local bundle = require("common.api.bundle")
-local fetch = require("common.api.fetch")
 local battle_fetch = require("common.api.battle_fetch")
-local battle_transport = require("common.api.battle_transport")
+local hud_transport = require("common.api.battle_transport")
 local battle_parse = require("common.api.battle_parse")
 local status = require("common.api.status")
 
 local api = {}
 
-local FILTER_FETCH_COOLDOWN_SEC = 1.0
-
-function api.fetch_session(car_filter, force)
-    state.active_car_filter = car_filter or state.active_car_filter or "global"
-    fetch.fetch_session(car_filter, force)
-end
-
-function api.select_filter(car_filter)
-    car_filter = car_filter or "global"
-    state.active_car_filter = car_filter
-    if bundle.get_filter_leaderboard(car_filter) ~= nil then
+local function api_blocked()
+    if state.last_error == "user_invalidated" then return true end
+    if util.is_presence_fatal(state.last_error) and util.should_show_presence_error(state.last_error) then
         return true
     end
-    if state.fetch_pending then
-        state.scheduled_filter_fetch = car_filter
-        return false
-    end
-    api.fetch_session(car_filter, true)
     return false
+end
+
+local function profile_blocked()
+    return api_blocked()
+end
+
+local function slot_from_rival(entry)
+    if entry == nil then return nil end
+    return {
+        rank = tonumber(entry.rank) or 0,
+        name = entry.name or "?",
+        tier = profile.tier_from_raw(entry),
+        lap_ms = tonumber(entry.lap_ms or entry.best_lap_ms) or 0,
+        car_name = entry.car_name or "",
+        avatar_url = entry.avatar_url,
+        elo = tonumber(entry.elo),
+    }
+end
+
+function api.fetch_session(_car_filter, force)
+    if not force then return end
+    local ok, ctx = pcall(context.read_session_context)
+    hud_transport.reset()
+    if ok then
+        pcall(hud_transport.try_connect, ctx, os.clock())
+    end
 end
 
 function api.tick(_car_filter)
@@ -45,37 +55,8 @@ function api.tick(_car_filter)
     local ok_ctx, ctx = pcall(context.read_session_context)
     if ok_ctx then
         local ok_step = pcall(function()
-            fetch.watchdog_profile_fetch(ctx)
-            local active_filter = state.active_car_filter or state.cached_filter or "global"
-            fetch.watchdog_session_fetch(ctx, active_filter)
-            fetch.watchdog_version_fetch(ctx, active_filter)
-
-            local ready = context.context_is_ready(ctx)
-            if ready and not state.version_fetch_pending and not state.fetch_pending and not state.profile_fetch_pending then
-                local version_interval = config.VERSION_POLL_INTERVAL_SEC or 3
-                if (now - (state.last_version_poll_at or 0)) >= version_interval then
-                    fetch.start_version_fetch(ctx, false, active_filter)
-                end
-            end
-
-            local backup_interval = config.HUD_CACHE_SYNC_INTERVAL_SEC or 120
-            local refresh_skip = config.HUD_CACHE_SYNC_SKIP_AFTER_REFRESH_SEC or 90
-            if ready
-                and not state.fetch_pending
-                and not state.profile_fetch_pending
-                and not state.version_fetch_pending
-                and (now - (state.last_hud_backup_sync_at or 0)) >= backup_interval
-                and (now - (state.last_hud_refresh_at or 0)) >= refresh_skip then
-                state.last_hud_backup_sync_at = now
-                bundle.clear_filter_cache()
-                fetch.fetch_session(active_filter, true)
-            end
-
-            if bundle.bundle_needs_profile() and not state.profile_fetch_pending and not state.fetch_pending then
-                pcall(fetch.start_profile_fetch, ctx, false, false)
-            end
-
-            pcall(battle_transport.tick, ctx, now)
+            util.clear_stale_presence_error()
+            pcall(hud_transport.tick, ctx, now)
         end)
         if not ok_step then
             state.last_error = "tick_error"
@@ -90,7 +71,13 @@ function api.tick(_car_filter)
 end
 
 function api.is_loading()
-    return state.fetch_pending or state.profile_fetch_pending
+    if profile_blocked() then return false end
+    if state.cached_bundle ~= nil then return false end
+    local ok, ctx = pcall(context.read_session_context)
+    if not ok or not context.context_is_ready(ctx) then return false end
+    return state.battle_sse_stream_pending
+        or not state.battle_sse_connected
+        or util.is_online_with_steam()
 end
 
 function api.get_status()
@@ -106,6 +93,7 @@ function api.get_context()
         local c = state.cached_bundle.context
         return {
             server_id = util.safe_str(c.server_id),
+            server_name = util.safe_str(c.server_name),
             track_id = util.safe_str(c.track_id),
             track_name = util.safe_str(c.track_name),
             layout_id = util.safe_str(c.layout_id),
@@ -125,94 +113,62 @@ function api.get_context()
         car_id = ctx.car_id,
         car_name = ctx.car_name,
         player_steam_id = ctx.player_steam_id,
+        server_name = ctx.server_name,
     }
 end
-
-function api.get_leaderboard_filters()
-    if state.cached_bundle ~= nil and state.cached_bundle.leaderboard ~= nil and state.cached_bundle.leaderboard.filters ~= nil then
-        local filters = state.cached_bundle.leaderboard.filters
-        if #filters > 0 then return filters end
-    end
-    return { { id = "global", label = "Global ranking" } }
-end
-
-function api.get_leaderboard_header()
-    if state.cached_bundle ~= nil and state.cached_bundle.leaderboard ~= nil then
-        local lb = state.cached_bundle.leaderboard
-        return { title = lb.title or "Top 10", map = lb.map or "", layout = lb.layout or "" }
-    end
-    local ctx = api.get_context()
-    return {
-        title = "Top 10",
-        map = ctx.track_name or ctx.track_id or "",
-        layout = ctx.layout_name or ctx.layout_id or "",
-    }
-end
-
-function api.request_filter_if_needed(car_filter)
-    car_filter = car_filter or "global"
-    if bundle.get_filter_leaderboard(car_filter) ~= nil then return end
-    if state.fetch_pending then
-        if state.fetch_car_filter ~= car_filter then
-            state.scheduled_filter_fetch = car_filter
-        end
-        return
-    end
-    local now = os.clock()
-    state.filter_fetch_at = state.filter_fetch_at or {}
-    local last = state.filter_fetch_at[car_filter] or 0
-    if (now - last) < FILTER_FETCH_COOLDOWN_SEC then return end
-    state.filter_fetch_at[car_filter] = now
-    api.fetch_session(car_filter, false)
-end
-
-function api.get_top10(car_filter)
-    car_filter = car_filter or "global"
-    local lb = bundle.get_filter_leaderboard(car_filter)
-    if lb ~= nil then
-        return parse.copy_entries(lb.entries)
-    end
-    api.request_filter_if_needed(car_filter)
-    return {}
-end
-
-function api.get_top8(car_filter) return api.get_top10(car_filter) end
 
 function api.get_player_profile()
-    local p = profile.coalesce_profile(state.cached_bundle and state.cached_bundle.profile)
-    if p ~= nil then
+    local raw = state.cached_bundle and state.cached_bundle.profile
+    local p = profile.coalesce_profile(raw)
+    if p ~= nil and p.isInvalidated ~= true then
         return {
             name = p.name or "?",
             rank = tonumber(p.rank) or 0,
-            tier = tonumber(p.tier) or 0,
+            tier = profile.tier_from_raw(p),
             best_lap_ms = tonumber(p.best_lap_ms) or 0,
             car_name = p.car_name or "",
             car_id = p.car_id or "",
             avatar_url = p.avatar_url,
             steam_id = p.steam_id or p.steamId,
+            elo = p.elo,
+            rivals = p.rivals,
         }
     end
+    if profile_blocked() then return nil end
     return nil
 end
 
-function api.get_rival()
+function api.get_competition_ladder(_car_filter)
     local p = profile.coalesce_profile(state.cached_bundle and state.cached_bundle.profile)
-    if p == nil then return nil end
+    if p ~= nil and p.isInvalidated ~= true then
+        local rank = tonumber(p.rank) or 0
+        local rivals = p.rivals or { above = nil, below = nil }
+        local center = {
+            rank = rank,
+            name = p.name,
+            tier = profile.tier_from_raw(p),
+            lap_ms = p.best_lap_ms,
+            car_name = p.car_name,
+            avatar_url = p.avatar_url,
+            elo = p.elo,
+            is_self = true,
+        }
 
-    local r = p.rival
-    if r == nil and state.cached_bundle ~= nil and state.cached_bundle.leaderboard ~= nil then
-        r = profile.derive_rival_from_leaderboard(p, state.cached_bundle.leaderboard)
+        return {
+            slots = {
+                [0] = slot_from_rival(rivals.above),
+                [1] = center,
+                [2] = slot_from_rival(rivals.below),
+            },
+            player_rank = rank,
+            profile = api.get_player_profile(),
+        }
     end
-    if r == nil then return nil end
 
-    return {
-        name = r.name or "?",
-        rank = tonumber(r.rank) or 0,
-        tier = tonumber(r.tier) or 0,
-        best_lap_ms = tonumber(r.best_lap_ms) or tonumber(r.lap_ms) or 0,
-        car_name = r.car_name or "",
-        avatar_url = r.avatar_url,
-    }
+    if profile_blocked() then
+        return { slots = {}, player_rank = 0, profile = nil }
+    end
+    return { slots = {}, player_rank = 0, profile = nil }
 end
 
 function api.get_battle()
@@ -229,52 +185,24 @@ end
 
 function api.reset_session_state()
     state.cached_at = 0
-    state.cached_filter = "global"
     state.cached_bundle = nil
-    state.fetch_pending = false
-    state.profile_fetch_pending = false
     state.last_error = nil
     state.last_http_status = nil
-    state.fetch_attempt = 0
-    state.profile_fetch_attempt = 0
-    state.profile_candidates_exhausted = false
-    state.server_name_candidates = nil
-    state.profile_server_candidates = nil
-    state.last_resolved_server_name = nil
     state.last_session_had_players = false
     state.last_fetch_url = ""
     state.last_fetch_kind = ""
     state.last_web_event = ""
-    state.session_fetch_started_at = 0
-    state.profile_fetch_started_at = 0
     state.web_queue = {}
     state.web_inflight = nil
     state.web_stream = nil
-    state.fetch_car_filter = nil
-    state.scheduled_filter_fetch = nil
-    state.filter_fetch_at = {}
-    state.last_version_attempt_at = 0
-    state.last_version_poll_at = 0
-    state.last_hud_refresh_at = 0
-    state.last_hud_backup_sync_at = 0
-    state.version_fetch_started_at = 0
-    state.version_fetch_pending = false
-    state.version_fetch_attempt = 0
-    state.version_server_candidates = nil
     state.hud_version = ""
-    state.hud_lb_version = ""
-    state.hud_player_versions = {}
-    state.version_cache_ok = false
-    state.active_car_filter = "global"
-    state.last_server_tried = ""
-    state.server_names_tried = nil
-    bundle.clear_filter_cache()
-    battle_transport.reset()
+    bundle.clear_cache()
+    hud_transport.reset()
 end
 
 function api.on_session_start()
     api.reset_session_state()
-    api.fetch_session("global", true)
+    api.fetch_session(nil, true)
 end
 
 function api.init()

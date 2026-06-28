@@ -1,4 +1,4 @@
---[[ Battle HUD transport: one SSE stream per session, reconnect on error. ]]
+--[[ Unified HUD transport: one SSE stream (session + battle) via GET /hud/stream. ]]
 
 local config = require("common.config")
 local state = require("common.api.state")
@@ -7,9 +7,8 @@ local steam = require("common.api.steam")
 local context = require("common.api.context")
 local battle_fetch = require("common.api.battle_fetch")
 local battle_sse = require("common.api.battle_sse")
-local web_queue = require("common.api.web_queue")
 
-local battle_transport = {}
+local hud_transport = {}
 
 local API_KEY_STORAGE = ac.storage("ProjectD-HUD:api_key", "")
 
@@ -19,38 +18,28 @@ local function api_key_suffix()
     return "&api_key=" .. util.url_encode(key)
 end
 
-local function stream_url(server_name, steam_id)
+local function stream_url(ctx)
+    local qs = "steamId=" .. util.url_encode(ctx.player_steam_id)
+        .. "&carFilter=global"
+    local car = util.safe_str(ctx.car_id)
+    if car ~= "" then
+        qs = qs .. "&carModel=" .. util.url_encode(car)
+    end
+    qs = qs .. api_key_suffix()
     return string.format(
-        "%s%s?serverName=%s&steamId=%s%s",
+        "%s%s?%s",
         config.API_BASE_URL,
-        config.BATTLE_STREAM_PATH or "/hud/battle/stream",
-        util.url_encode(server_name),
-        util.url_encode(steam_id),
-        api_key_suffix()
+        config.HUD_STREAM_PATH or "/hud/stream",
+        qs
     )
 end
 
-local function server_candidates(ctx, force_new_cycle)
-    if not force_new_cycle and state.battle_server_candidates ~= nil and #state.battle_server_candidates > 0 then
-        return state.battle_server_candidates
-    end
-    state.battle_server_candidates = context.build_battle_server_name_candidates(ctx)
-    state.battle_sse_server_attempt = 0
-    return state.battle_server_candidates
-end
-
-local function try_next_server(candidates)
-    local attempt = state.battle_sse_server_attempt or 0
-    if attempt < #candidates then
-        state.battle_sse_server_attempt = attempt + 1
-        return true
-    end
-    state.battle_server_candidates = nil
-    state.battle_sse_server_attempt = 0
-    return false
-end
-
 local function should_retry_disconnect(err_reason, response)
+    if err_reason == "user_invalidated" then return false end
+    if util.is_presence_fatal(err_reason) then
+        return battle_fetch.is_session_live() or util.ignore_presence_error(err_reason)
+    end
+    if util.is_battle_fatal(err_reason) then return false end
     if err_reason ~= nil and err_reason ~= "" then
         if err_reason == "network_error" then return true end
         if string.sub(err_reason, 1, 4) == "http" then
@@ -61,79 +50,71 @@ local function should_retry_disconnect(err_reason, response)
     return code == 502 or code == 503 or code == 504
 end
 
-local function disconnect_and_clear(ctx, now)
+local function disconnect_sse_only()
     battle_sse.disconnect()
-    battle_fetch.reset()
     state.battle_sse_session_key = ""
 end
 
-local function session_key(ctx)
-    local server = util.safe_str(state.battle_last_resolved_server_name)
-    if server == "" then server = util.safe_str(state.battle_last_server_tried) end
-    if server == "" then
-        local candidates = state.battle_server_candidates
-        if candidates ~= nil and #candidates > 0 then
-            server = util.safe_str(candidates[1])
-        end
-    end
-    return util.safe_str(ctx.player_steam_id) .. "|" .. server
+local function disconnect_and_clear(_ctx, _now)
+    disconnect_sse_only()
+    battle_fetch.reset()
 end
 
-function battle_transport.try_connect(ctx, now)
+local function session_key(ctx)
+    return util.safe_str(ctx.player_steam_id) .. "|" .. util.safe_str(ctx.car_id)
+end
+
+function hud_transport.try_connect(ctx, now)
     now = now or os.clock()
     ctx.player_steam_id = steam.normalize_steam_id(ctx.player_steam_id)
     if ctx.player_steam_id == "" then return false end
 
     if battle_sse.is_active() then return true end
+    if util.is_battle_fatal(state.battle_last_error)
+        and not (util.is_presence_fatal(state.battle_last_error) and battle_fetch.is_session_live(now)) then
+        return false
+    end
     if now < (state.battle_sse_reconnect_at or 0) then return false end
 
-    local candidates = server_candidates(ctx, state.battle_server_candidates == nil)
-    if #candidates == 0 then
-        state.battle_last_error = "missing_server_name"
-        return false
-    end
-
-    if state.battle_sse_server_attempt <= 0 then
-        state.battle_sse_server_attempt = 1
-    end
-
-    local server_name = candidates[state.battle_sse_server_attempt]
-    if server_name == nil then
-        state.battle_sse_server_attempt = 0
-        state.battle_server_candidates = nil
-        return false
-    end
-
-    state.battle_last_server_tried = server_name
-    local url = stream_url(server_name, ctx.player_steam_id)
+    local url = stream_url(ctx)
     local sse_ctx = {
         player_steam_id = ctx.player_steam_id,
         _sse_on_close = function(err, response)
             local reason = state.battle_last_error
-            if should_retry_disconnect(reason, response) and try_next_server(candidates) then
-                state.battle_sse_reconnect_at = now
-                battle_fetch.debug("sse retry next server")
+            if should_retry_disconnect(reason, response) then
+                state.battle_sse_reconnect_at = now + (config.HUD_SSE_RECONNECT_SEC or 3)
+                battle_fetch.debug("hud sse reconnect scheduled")
             end
         end,
     }
 
     if battle_sse.connect(url, sse_ctx) then
-        state.battle_last_resolved_server_name = server_name
         state.battle_sse_session_key = session_key(ctx)
         state.battle_sse_connected_at = now
-        battle_fetch.debug("sse serverName=" .. server_name)
+        battle_fetch.debug("hud sse steamId=" .. ctx.player_steam_id)
         return true
     end
 
     return false
 end
 
-function battle_transport.tick(ctx, now)
+function hud_transport.tick(ctx, now)
     now = now or os.clock()
     battle_fetch.tick_latch(now)
 
-    if not context.battle_context_ready(ctx) then
+    if not context.context_is_ready(ctx) then
         if battle_sse.is_active() or state.battle_sse_session_key ~= "" then
+            if battle_fetch.is_session_live(now) then
+                disconnect_sse_only()
+            else
+                disconnect_and_clear(ctx, now)
+            end
+        end
+        return
+    end
+
+    if state.last_error == "user_invalidated" then
+        if battle_sse.is_active() then
             disconnect_and_clear(ctx, now)
         end
         return
@@ -143,45 +124,25 @@ function battle_transport.tick(ctx, now)
 
     local key = session_key(ctx)
     if state.battle_sse_session_key ~= "" and state.battle_sse_session_key ~= key then
-        battle_fetch.debug("session changed -> reconnect sse")
+        battle_fetch.debug("hud sse context changed -> reconnect")
         battle_sse.disconnect()
         state.battle_sse_reconnect_at = 0
-        state.battle_server_candidates = nil
         state.battle_sse_session_key = ""
     end
 
     if battle_sse.is_active() then
         battle_sse.poll()
-        local rotate_sec = config.BATTLE_SSE_IDLE_ROTATE_SEC or 12
-        local connected_at = state.battle_sse_connected_at or 0
-        local last_snap = state.battle_last_snapshot_at or 0
-        if state.battle_sse_connected and connected_at > 0 and (now - connected_at) >= rotate_sec then
-            if last_snap < connected_at then
-                battle_fetch.debug("sse idle on " .. util.safe_str(state.battle_last_server_tried) .. " — try next serverName")
-                state.battle_last_error = "sse_no_data"
-                battle_sse.disconnect()
-                local candidates = state.battle_server_candidates or server_candidates(ctx, true)
-                if try_next_server(candidates) then
-                    state.battle_sse_reconnect_at = 0
-                else
-                    state.battle_server_candidates = nil
-                    state.battle_sse_reconnect_at = now + (config.BATTLE_SSE_RECONNECT_SEC or 3)
-                end
-                state.battle_sse_connected_at = 0
-            end
-        end
     else
-        battle_transport.try_connect(ctx, now)
+        hud_transport.try_connect(ctx, now)
     end
 end
 
-function battle_transport.reset()
+function hud_transport.reset()
     battle_sse.disconnect()
     battle_fetch.reset()
     state.battle_sse_session_key = ""
-    state.battle_sse_server_attempt = 0
     state.battle_sse_reconnect_at = 0
     state.battle_sse_connected_at = 0
 end
 
-return battle_transport
+return hud_transport

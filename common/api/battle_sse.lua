@@ -5,6 +5,7 @@ local state = require("common.api.state")
 local util = require("common.api.util")
 local web_queue = require("common.api.web_queue")
 local battle_fetch = require("common.api.battle_fetch")
+local session_fetch = require("common.api.session_fetch")
 local battle_sse_tcp = require("common.api.battle_sse_tcp")
 
 local battle_sse = {}
@@ -42,14 +43,31 @@ local function dispatch_event(event_name, data_str, ctx)
 
     event_name = trim_line(event_name)
     if event_name == "" or event_name == "message" then
-        if payload.ok == false then
+        if payload.ok == false and payload.players == nil
+            and (payload.reason ~= nil or payload.error ~= nil) then
+            event_name = "session:error"
+        elseif payload.players ~= nil or (payload.ok == true and payload.version ~= nil) then
+            event_name = "session:update"
+        elseif payload.ok == false then
             event_name = "battle:clear"
+        elseif payload.state ~= nil or payload.battleId ~= nil or payload.player1 ~= nil then
+            event_name = "battle:update"
         else
             event_name = "battle:update"
         end
     end
 
     local steam_id = ctx ~= nil and ctx.player_steam_id or state.battle_sse_steam_id or ""
+
+    if event_name == "session:update" then
+        session_fetch.apply_update(payload, steam_id)
+        return
+    end
+
+    if event_name == "session:error" then
+        session_fetch.apply_error(payload)
+        return
+    end
 
     if event_name == "battle:update" then
         if payload.ok == false then
@@ -141,20 +159,37 @@ local function on_stream_closed(err, response, ctx)
     state.battle_sse_last_body_len = 0
 
     local now = os.clock()
-    local reconnect = config.BATTLE_SSE_RECONNECT_SEC or 3
-    state.battle_sse_reconnect_at = now + reconnect
+    local reconnect = config.HUD_SSE_RECONNECT_SEC or 3
 
     if util.is_web_error(err) then
         state.battle_last_error = "network_error"
         battle_fetch.debug("sse closed err=" .. tostring(err))
     else
-        local code = util.http_status_code(response)
-        if code ~= nil and code ~= 200 then
-            state.battle_last_error = "http_" .. tostring(code)
-            battle_fetch.debug("sse closed http=" .. tostring(code))
+        local _, err_reason = util.read_api_response(err, response)
+        if err_reason ~= nil then
+            if util.ignore_presence_error(err_reason) then
+                battle_fetch.debug("sse presence ignored: " .. tostring(err_reason))
+            else
+                state.battle_last_error = err_reason
+                battle_fetch.debug("sse closed reason=" .. tostring(err_reason))
+            end
         else
-            battle_fetch.debug("sse closed (reconnect in " .. tostring(reconnect) .. "s)")
+            local code = util.http_status_code(response)
+            if code ~= nil and code ~= 200 then
+                state.battle_last_error = "http_" .. tostring(code)
+                battle_fetch.debug("sse closed http=" .. tostring(code))
+            else
+                battle_fetch.debug("sse closed (reconnect in " .. tostring(reconnect) .. "s)")
+            end
         end
+    end
+
+    local block_reconnect = util.is_battle_fatal(state.battle_last_error)
+        and not (util.is_presence_fatal(state.battle_last_error) and battle_fetch.is_session_live(now))
+    if block_reconnect then
+        state.battle_sse_reconnect_at = math.huge
+    else
+        state.battle_sse_reconnect_at = now + reconnect
     end
 
     if ctx ~= nil and ctx._sse_on_close ~= nil then
@@ -170,6 +205,10 @@ local function on_stream_response(err, response, ctx, item)
 
     local code = util.http_status_code(response)
     if code ~= nil and code ~= 200 then
+        local _, err_reason = util.read_api_response(err, response)
+        if err_reason ~= nil and not util.ignore_presence_error(err_reason) then
+            state.battle_last_error = err_reason
+        end
         on_stream_closed(err, response, ctx)
         return
     end
@@ -177,6 +216,7 @@ local function on_stream_response(err, response, ctx, item)
     state.battle_sse_connected = true
     state.battle_sse_stream_pending = false
     state.battle_last_error = nil
+    state.battle_sse_last_activity_at = os.clock()
 
     local body = util.response_body(response)
     if body == nil or body == "" then return end
@@ -206,11 +246,11 @@ local function connect_web(url, ctx)
     state.battle_sse_last_body_len = 0
     state.battle_sse_mode = "web"
     state.last_fetch_url = url
-    battle_fetch.debug("sse web connect " .. url)
+    battle_fetch.debug("hud sse web connect " .. url)
 
     local item = {
         url = url,
-        kind = "battle_sse",
+        kind = "hud_sse",
         expect_persistent = true,
         ctx = ctx,
         callbacks = {
@@ -218,7 +258,7 @@ local function connect_web(url, ctx)
                 state.battle_sse_connected = true
                 state.battle_sse_stream_pending = false
                 state.battle_last_error = nil
-                battle_fetch.debug("sse web stream open")
+                battle_fetch.debug("hud sse web stream open")
             end,
             on_chunk = function(chunk)
                 on_stream_chunk(chunk, ctx)
@@ -265,7 +305,7 @@ end
 
 function battle_sse.disconnect()
     battle_sse_tcp.disconnect()
-    web_queue.close_stream("battle_sse")
+    web_queue.close_stream("hud_sse")
     state.battle_sse_connected = false
     state.battle_sse_stream_pending = false
     state.battle_sse_buffer = ""

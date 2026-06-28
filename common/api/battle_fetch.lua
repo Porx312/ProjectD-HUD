@@ -33,6 +33,7 @@ local function copy_player_ui(p)
         avatar_url = p.avatar_url,
         car_name = p.car_name,
         role = p.role,
+        elo = p.elo,
         placeholder = p.placeholder == true,
     }
 end
@@ -128,6 +129,16 @@ function battle_fetch.apply_snapshot(raw, local_steam_id, now)
     end
 
     local prev_ui = state.battle_ui
+    battle_parse.merge_players_from_previous(ui, prev_ui)
+
+    if util.is_presence_fatal(state.last_error) then
+        state.last_error = nil
+    end
+
+    if util.is_presence_fatal(state.battle_last_error) and util.ignore_presence_error(state.battle_last_error) then
+        state.battle_last_error = nil
+    end
+
     if battle_parse.is_terminal_ui(ui) and prev_ui ~= nil then
         local pr = ui.player_right
         if pr ~= nil and pr.placeholder and prev_ui.player_right ~= nil and prev_ui.player_right.placeholder ~= true then
@@ -214,6 +225,15 @@ local function with_toast_timeout(ui, now)
     return ui
 end
 
+function battle_fetch.is_session_live(now)
+    now = now or os.clock()
+    if latch_active(now) then return true end
+    if state.battle_ui ~= nil then
+        return not battle_parse.is_terminal_ui(state.battle_ui)
+    end
+    return false
+end
+
 function battle_fetch.get_battle(now)
     now = now or os.clock()
 
@@ -250,11 +270,8 @@ function battle_fetch.reset()
     state.battle_finish_latch_snapshot = nil
     state.battle_last_battle_id = ""
     state.battle_last_error = nil
-    state.battle_server_candidates = nil
     state.battle_result_hold_until = 0
     state.battle_last_event_ts = 0
-    state.battle_last_resolved_server_name = nil
-    state.battle_last_server_tried = ""
     state.battle_event_shown_at = 0
     state.battle_last_snapshot_at = 0
 end

@@ -23,7 +23,7 @@ local function prefetch_avatars(battle)
     if battle == nil then return end
     for _, player in ipairs({ battle.player_left, battle.player_right }) do
         if player ~= nil then
-            images.request_avatar(images.resolve_url(player.name, player.avatar_url))
+            images.prefetch_avatar(player.name, player.avatar_url)
         end
     end
 end

@@ -25,8 +25,6 @@ local function measure_dwrite(font, text, size)
     return sz
 end
 
-local leaderboard_car_name
-
 function draw.flat_panel(origin, size)
     ui.drawRectFilled(origin, origin + size, theme.colors.bg, 6, layout.corners_all())
 end
@@ -48,6 +46,23 @@ function draw.leaderboard_panel(win_origin, win_size)
     local overlay = images.get_leaderboard_panel_overlay()
     if overlay ~= nil then
         ui.drawImage(overlay, origin, br, theme.colors.leaderboard_overlay)
+    end
+
+    return po, ps
+end
+
+--- Panel Competition: solo overlay_rivals a pantalla completa.
+function draw.competition_panel(win_origin, win_size)
+    local po, ps = layout.competition_fit(win_size)
+    local origin = win_origin + po
+    local br = origin + ps
+    local tex = images.get_competition_rivals_overlay()
+
+    if tex ~= nil then
+        ui.drawImage(tex, origin, br, theme.colors.competition_rivals_overlay)
+    else
+        ui.drawRectFilled(origin, br, theme.colors.bg_card, 8, layout.corners_all())
+        ui.drawRect(origin, br, theme.colors.panel_border, 8, layout.corners_all(), 1)
     end
 
     return po, ps
@@ -170,122 +185,121 @@ function draw.avatar_circle(pos, url, size)
 end
 
 function draw.tier_badge(pos, tier, tier_sz)
-    if pos == nil then return end
-    tier_sz = math.max(8, tonumber(tier_sz) or 24)
-    theme.ensure_fonts()
-    tier = tonumber(tier) or 0
-    local path = images.get_tier_path(tier)
-
-    if path ~= nil then
-        ui.drawImage(path, pos, pos + vec2(tier_sz, tier_sz))
-        return
-    end
-
-    local center = pos + vec2(tier_sz / 2, tier_sz / 2)
-    ui.drawCircleFilled(center, tier_sz / 2, theme.colors.tier_fallback, 16)
-    ui.drawCircle(center, tier_sz / 2, theme.colors.white, 16, 1)
-
-    local label = tostring(tier)
-    ui.pushDWriteFont(theme.fonts.bold)
-    local tw = measure_text(theme.fonts.bold, label, 11)
-    ui.dwriteDrawText(label, 11, pos + vec2((tier_sz - tw) / 2, (tier_sz - 11) / 2), theme.colors.white)
-    ui.popDWriteFont()
+    images.draw_tier_badge(pos, tier, tier_sz)
 end
 
---- Fila top 5: # | avatar | nombre | tier — tier alineado al nombre.
-function draw.driver_row(origin, entry, opts)
+local function truncate_text(text, font, fs, max_w)
+    text = tostring(text or "")
+    if max_w <= 0 then return "", fs end
+    ui.pushDWriteFont(font)
+    if ui.measureDWriteText(text, fs).x <= max_w then
+        ui.popDWriteFont()
+        return text, fs
+    end
+    local suffix = "…"
+    while #text > 0 do
+        text = text:sub(1, -2)
+        if text == "" then break end
+        if ui.measureDWriteText(text .. suffix, fs).x <= max_w then
+            ui.popDWriteFont()
+            return text .. suffix, fs
+        end
+    end
+    ui.popDWriteFont()
+    return suffix, fs
+end
+
+--- Fila competition: posición · foto · nombre · coche · tiempo · tier (una línea).
+function draw.competition_row(origin, entry, opts)
     theme.ensure_fonts()
     opts = opts or {}
-
     local row_h = opts.row_height or layout.ROW_H
     local rank_col = opts.rank_col_width or RANK_COL
-    local rank_color = opts.rank_color or theme.colors.white
-    local avatar_sz = opts.avatar_size or AVATAR_ROW
-    local tier_sz = opts.tier_size or TIER_ROW
-    local name_fs = opts.name_fs or 15
-    local sub_fs = opts.sub_fs or 13
+    local content_w = opts.content_width or 200
+    local row_id = opts.row_id or ("row_" .. tostring(entry.rank))
+    local avatar_sz = math.min(opts.avatar_size or AVATAR_ROW, row_h - 2)
+    local tier_sz = math.max(12, math.min(opts.tier_size or TIER_ROW, row_h - 2))
+    local name_fs = opts.name_fs or 13
+    local car_fs = opts.car_fs or name_fs
     local time_fs = opts.time_fs or name_fs
-    local name_gap = opts.name_gap or 6
-    local tier_gap = opts.tier_gap or 6
-    local time_gap = opts.time_gap or 6
-    local trailing_pad = opts.trailing_pad or 8
-    local content_w = opts.content_width
+    local gap = opts.text_gap or 3
+    local trailing_pad = opts.trailing_pad or 4
+    local row_size = vec2(content_w, row_h)
 
-    local block_h = math.max(avatar_sz, name_fs + name_gap + sub_fs)
-    local y0 = origin.y + (row_h - block_h) * 0.5
-    local name_y = y0
-    local rank_y = origin.y + (row_h - name_fs) * 0.5
+    ui.setCursor(origin)
+    ui.invisibleButton(row_id, row_size)
+    local hovered = ui.itemHovered()
+    local is_self = entry.is_self == true
 
-    if opts.draw_rank_number then
-        local rank_text = "#" .. tostring(entry.rank)
-        ui.pushDWriteFont(theme.fonts.bold)
-        local rank_w = measure_text(theme.fonts.bold, rank_text, name_fs)
-        ui.dwriteDrawText(rank_text, name_fs, vec2(origin.x + (rank_col - rank_w) * 0.5, rank_y), rank_color)
-        ui.popDWriteFont()
+    if is_self then
+        ui.drawRect(
+            origin,
+            origin + row_size,
+            theme.colors.accent,
+            5,
+            layout.corners_all(),
+            math.max(1, row_h * 0.04)
+        )
+    elseif hovered then
+        ui.drawRectFilled(origin, origin + row_size, rgbm(1, 1, 1, 0.06), 5, layout.corners_all())
     end
 
-    local avatar_x = origin.x + rank_col
+    local rank_color = theme.colors.white
+    if entry.rank == 1 then rank_color = theme.colors.accent end
+    if is_self then rank_color = theme.colors.battle_vs or theme.colors.accent end
+
+    local cy = origin.y + row_h * 0.5
+    local tier_x = origin.x + content_w - trailing_pad - tier_sz
+    local time_str = theme.format_lap(entry.lap_ms or entry.best_lap_ms)
+
+    ui.pushDWriteFont(theme.fonts.medium)
+    local time_w = measure_text(theme.fonts.medium, time_str, time_fs)
+    ui.popDWriteFont()
+
+    local time_x = tier_x - gap - time_w
+    local text_right = time_x - gap
+
+    local rank_text = "#" .. tostring(entry.rank or "?")
+    ui.pushDWriteFont(theme.fonts.bold)
+    local rank_w = measure_text(theme.fonts.bold, rank_text, name_fs)
+    ui.dwriteDrawText(
+        rank_text, name_fs,
+        vec2(origin.x + (rank_col - rank_w) * 0.5, cy - name_fs * 0.5),
+        rank_color
+    )
+    ui.popDWriteFont()
+
+    local x = origin.x + rank_col
     draw.avatar_circle(
-        vec2(avatar_x, y0 + (block_h - avatar_sz) * 0.5),
+        vec2(x, cy - avatar_sz * 0.5),
         images.resolve_url(entry.name, entry.avatar_url),
         avatar_sz
     )
+    x = x + avatar_sz + gap
 
-    local name_x = avatar_x + avatar_sz + 6
+    local flex_w = math.max(0, text_right - x)
     local name_text = theme.format_display_name(entry.display_name or entry.name)
-    local car = entry.car_name or "Car"
-    local time_str = theme.format_lap(entry.lap_ms or entry.best_lap_ms)
-    local show_rank_on_car = opts.show_rank_on_car == true
-    local time_on_name_line = opts.time_on_name_line == true
+    local car_text = theme.format_car_label(entry.car_name, entry.car_id)
 
     ui.pushDWriteFont(theme.fonts.bold)
-    ui.dwriteDrawText(name_text, name_fs, vec2(name_x, name_y), theme.colors.white)
+    name_text, name_fs = truncate_text(name_text, theme.fonts.bold, name_fs, flex_w * 0.46)
+    local name_w = measure_text(theme.fonts.bold, name_text, name_fs)
+    ui.dwriteDrawText(name_text, name_fs, vec2(x, cy - name_fs * 0.5), theme.colors.white)
+    ui.popDWriteFont()
+    x = x + name_w + gap
+
+    ui.pushDWriteFont(theme.fonts.medium)
+    car_text, car_fs = truncate_text(car_text, theme.fonts.medium, car_fs, math.max(0, text_right - x))
+    if x < text_right then
+        ui.dwriteDrawText(car_text, car_fs, vec2(x, cy - car_fs * 0.5), theme.colors.muted)
+    end
     ui.popDWriteFont()
 
-    local sub_y = name_y + name_fs + name_gap
+    ui.pushDWriteFont(theme.fonts.medium)
+    ui.dwriteDrawText(time_str, time_fs, vec2(time_x, cy - time_fs * 0.5), theme.colors.accent)
+    ui.popDWriteFont()
 
-    if time_on_name_line and content_w ~= nil then
-        local right = origin.x + content_w - trailing_pad
-        local time_w = measure_text(theme.fonts.medium, time_str, time_fs)
-        local pair_gap = math.max(4, time_gap)
-        local block_w = time_w + pair_gap + tier_sz
-        local block_center_x = origin.x + content_w * 0.82
-        local block_left = math.min(
-            right - block_w,
-            math.max(name_x + avatar_sz + 18, block_center_x - block_w * 0.5)
-        )
-        local time_x = block_left
-        local tier_x = time_x + time_w + pair_gap
-        local tier_y = origin.y + (row_h - tier_sz) * 0.5
-        draw.tier_badge(vec2(tier_x, tier_y), entry.tier, tier_sz)
-
-        ui.pushDWriteFont(theme.fonts.medium)
-        local time_y = tier_y + (tier_sz - time_fs) * 0.5
-        ui.dwriteDrawText(time_str, time_fs, vec2(time_x, time_y), theme.colors.accent)
-        ui.popDWriteFont()
-
-        ui.pushDWriteFont(theme.fonts.medium)
-        ui.dwriteDrawText(leaderboard_car_name(entry), sub_fs, vec2(name_x, sub_y), theme.colors.white)
-        ui.popDWriteFont()
-    else
-        local name_w = measure_text(theme.fonts.bold, name_text, name_fs)
-        local tier_x = name_x + name_w + tier_gap
-        local tier_y = name_y + (name_fs - tier_sz) * 0.5
-        draw.tier_badge(vec2(tier_x, tier_y), entry.tier, tier_sz)
-
-        ui.pushDWriteFont(theme.fonts.medium)
-        if show_rank_on_car then
-            local car_prefix = "#" .. tostring(entry.rank) .. " " .. car
-            ui.dwriteDrawText(car_prefix .. " - ", sub_fs, vec2(name_x, sub_y), theme.colors.white)
-            local prefix_w = measure_text(theme.fonts.medium, car_prefix .. " - ", sub_fs)
-            ui.dwriteDrawText(time_str, sub_fs, vec2(name_x + prefix_w, sub_y), theme.colors.accent)
-        else
-            ui.dwriteDrawText(car .. " - ", sub_fs, vec2(name_x, sub_y), theme.colors.white)
-            local prefix_w = measure_text(theme.fonts.medium, car .. " - ", sub_fs)
-            ui.dwriteDrawText(time_str, sub_fs, vec2(name_x + prefix_w, sub_y), theme.colors.accent)
-        end
-        ui.popDWriteFont()
-    end
+    draw.tier_badge(vec2(tier_x, cy - tier_sz * 0.5), entry.tier, tier_sz)
 end
 
 local function profile_name_text(entry)
@@ -293,24 +307,7 @@ local function profile_name_text(entry)
 end
 
 local function profile_car_name(entry)
-    local car = entry.car_name
-    if car == nil or car == "" then
-        car = theme.format_car_short(entry.car_name, entry.car_id)
-    end
-
-    car = car:gsub("^%s+", ""):gsub("%s+$", "")
-    car = car:gsub("%s+", " ")
-
-    local first_word = car:match("^(%S+)")
-    if first_word ~= nil and #first_word <= 10 then
-        return first_word
-    end
-
-    if #car <= 10 then
-        return car
-    end
-
-    return car:sub(1, 10)
+    return theme.format_car_label(entry.car_name, entry.car_id)
 end
 
 local function car_line_prefix(entry, opts)
@@ -319,44 +316,6 @@ local function car_line_prefix(entry, opts)
         return "#" .. tostring(entry.rank) .. " " .. car
     end
     return car
-end
-
-leaderboard_car_name = function(entry)
-    local car = entry.car_name
-    if car == nil or car == "" then
-        car = theme.format_car_short(entry.car_name, entry.car_id)
-    end
-
-    car = car:gsub("^%s+", ""):gsub("%s+$", "")
-    car = car:gsub("%s+", " ")
-
-    local first_word = car:match("^(%S+)")
-    if first_word ~= nil and #first_word <= 6 then
-        return first_word
-    end
-
-    if #car <= 6 then
-        return car
-    end
-
-    return car:sub(1, 6)
-end
-
-local function draw_rival_tag(avatar_pos, avatar_size, fs)
-    theme.ensure_fonts()
-    local label = "rival"
-    ui.pushDWriteFont(theme.fonts.bold)
-    local tw = measure_text(theme.fonts.bold, label, fs)
-    ui.popDWriteFont()
-
-    local pad = layout.CARD_EDGE_PAD
-    local pos = vec2(avatar_pos.x + pad, avatar_pos.y + pad)
-    local br = pos + vec2(tw + pad * 2, fs + pad * 1.2)
-    ui.drawRectFilled(pos, br, theme.colors.rival_tag, math.min(3, pad + 1), layout.corners_all())
-
-    ui.pushDWriteFont(theme.fonts.bold)
-    ui.dwriteDrawText(label, fs, pos + vec2(pad, pad * 0.35), theme.colors.white)
-    ui.popDWriteFont()
 end
 
 local function profile_metrics_from_opts(opts)
@@ -395,10 +354,6 @@ function draw.profile_card(panel_o, panel_size, entry, opts)
 
     draw.avatar_circle(avatar_pos, url, m.avatar)
 
-    if opts.rival_tag then
-        draw_rival_tag(avatar_pos, m.avatar, m.rival_label_fs)
-    end
-
     ui.pushDWriteFont(theme.fonts.bold)
     ui.dwriteDrawText(name_text, m.name_fs, vec2(tx, text_y), theme.colors.white)
     ui.popDWriteFont()
@@ -406,7 +361,7 @@ function draw.profile_card(panel_o, panel_size, entry, opts)
     local tier_x = tx + name_sz.x + m.name_tier_gap
     local name_center_y = text_y + name_sz.y * 0.5
     local tier_y = name_center_y - m.tier * 0.5
-    draw.tier_badge(vec2(tier_x, tier_y), entry.tier, m.tier)
+    draw.tier_badge(vec2(tier_x, tier_y), entry.tier, math.max(14, m.tier))
 
     local sub_y = text_y + name_sz.y + m.line_gap
 
@@ -417,10 +372,6 @@ function draw.profile_card(panel_o, panel_size, entry, opts)
     ui.popDWriteFont()
 end
 
-function draw.rival_block(win_origin, win_size, rival)
-    draw.profile_block(win_origin, win_size, rival, { rival_tag = true })
-end
-
 function draw.profile_block(win_origin, win_size, entry, extra)
     extra = extra or {}
     local po, ps = layout.panel_fit(win_size)
@@ -428,7 +379,6 @@ function draw.profile_block(win_origin, win_size, entry, extra)
     local opts = {
         show_rank_on_car = true,
         metrics = layout.profile_metrics(ps),
-        rival_tag = extra.rival_tag == true,
     }
     draw.profile_card(panel_o, ps, entry, opts)
 end

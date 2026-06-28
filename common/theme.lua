@@ -10,6 +10,7 @@ theme.colors = {
     bg_card       = rgbm(0, 0, 0, 0.65),
     panel_overlay = rgbm(1, 1, 1, 1),
     leaderboard_overlay = rgbm(1, 1, 1, 1),
+    competition_rivals_overlay = rgbm(1, 1, 1, 1),
     panel_border  = rgbm(1, 1, 1, 0.06),
     leaderboard_sep = rgbm(1, 1, 1, 0.22),
     avatar_ring   = rgbm(1, 1, 1, 0.35),
@@ -19,6 +20,7 @@ theme.colors = {
     battle_bg     = rgbm(0.03, 0.06, 0.14, 0.92),
     battle_border = rgbm(1, 1, 1, 0.88),
     battle_mode_bg = rgbm(0.06, 0.14, 0.32, 0.98),
+    battle_vs       = rgbm(0.55, 0.88, 1.0, 1),
     battle_gap_fill = rgbm(0.62, 0.10, 0.14, 0.95),
     battle_gap_track = rgbm(0.12, 0.04, 0.06, 0.55),
     battle_gap_safe = rgbm(0.18, 0.72, 0.38, 0.95),
@@ -160,6 +162,31 @@ function theme.format_car_short(car_name, car_id)
     end
 
     return car_name:sub(1, 6):upper()
+end
+
+--- Etiqueta de coche para HUD: al menos dos palabras cuando existan; si no, una.
+function theme.format_car_label(car_name, car_id)
+    local car = car_name
+    if car == nil or car == "" then
+        if car_id ~= nil and car_id ~= "" then
+            car = string.gsub(car_id, "_", " ")
+        else
+            return "?"
+        end
+    end
+
+    car = car:gsub("^%s+", ""):gsub("%s+$", ""):gsub("%s+", " ")
+    if car == "" then return "?" end
+
+    local words = {}
+    for word in car:gmatch("%S+") do
+        words[#words + 1] = word
+        if #words >= 2 then break end
+    end
+
+    if #words == 0 then return "?" end
+    if #words == 1 then return words[1] end
+    return words[1] .. " " .. words[2]
 end
 
 --- Nombre corto para HUD (la API puede enviarlo ya recortado).

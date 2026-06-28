@@ -8,11 +8,9 @@ Time = 0
 
 
 
-local top10 = require("top10.first")
+local competition = require("competition.first")
 
 local profile = require("profile.first")
-
-local rival = require("rival.first")
 
 local battle = require("battle.first")
 
@@ -66,11 +64,9 @@ local function session_start()
 
     end)
 
-    top10.on_session_start()
+    competition.on_session_start()
 
     profile.on_session_start()
-
-    rival.on_session_start()
 
     battle.on_session_start()
 
@@ -100,11 +96,9 @@ function script.update(dt)
 
         end)
 
-        pcall(top10.init)
+        pcall(competition.init)
 
         pcall(profile.init)
-
-        pcall(rival.init)
 
         pcall(battle.init)
 
@@ -124,11 +118,11 @@ end
 
 
 
-function top10Main(dt) safe_main(top10, dt, "top10") end
+function competitionMain(dt) safe_main(competition, dt, "competition") end
 
-function top10Show() top10.on_open() end
+function competitionShow() competition.on_open() end
 
-function top10Hide() top10.on_close() end
+function competitionHide() competition.on_close() end
 
 
 
@@ -140,17 +134,8 @@ function profileHide() profile.on_close() end
 
 
 
-function rivalMain(dt) safe_main(rival, dt, "rival") end
-
-function rivalShow() rival.on_open() end
-
-function rivalHide() rival.on_close() end
-
-
-
 function battleMain(dt) safe_main(battle, dt, "battle") end
 
 function battleShow() battle.on_open() end
 
 function battleHide() battle.on_close() end
-

@@ -12,7 +12,7 @@ if use_api then
     local mock = require("common.mock_data")
     local err_text = tostring(api_or_err)
     function mock.get_status_message(kind)
-        if kind == "leaderboard" or kind == "profile" or kind == "rival" then
+        if kind == "leaderboard" or kind == "profile" or kind == "competition" then
             return "HUD API error — reinstall full ProjectD-HUD folder"
         end
         return err_text

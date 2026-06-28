@@ -2,6 +2,7 @@
 
 local config = require("common.config")
 local util = require("common.api.util")
+local profile = require("common.api.profile")
 local steam = require("common.api.steam")
 
 local battle_parse = {}
@@ -26,6 +27,11 @@ function battle_parse.placeholder_opponent()
     }
 end
 
+local function parse_elo(p)
+    if p == nil or type(p) ~= "table" then return nil end
+    return tonumber(p.elo) or tonumber(p.mmr) or tonumber(p.rating)
+end
+
 local function player_from_api(p)
     if p == nil or type(p) ~= "table" then
         return nil
@@ -37,13 +43,14 @@ local function player_from_api(p)
     end
     return {
         name = name ~= "" and name or "?",
-        tier = tonumber(p.tier) or 0,
-        avatar_url = p.avatar_url,
+        tier = profile.tier_from_raw(p),
+        avatar_url = profile.avatar_from_raw(p),
         car_name = util.safe_str(p.car_name),
         car_id = util.safe_str(p.car_id),
         role = string.lower(util.safe_str(p.role)),
         steam_id = sid,
         score = tonumber(p.score) or 0,
+        elo = parse_elo(p),
     }
 end
 
@@ -344,8 +351,39 @@ local function player_ui_fields(player)
         avatar_url = player.avatar_url,
         car_name = player.car_name,
         role = player.role,
+        elo = player.elo,
         placeholder = player.placeholder == true,
     }
+end
+
+function battle_parse.merge_player_ui(incoming, existing)
+    incoming = incoming or {}
+    if incoming.placeholder == true then return incoming end
+    if existing == nil or existing.placeholder == true then
+        return player_ui_fields(incoming)
+    end
+
+    local p = player_ui_fields(incoming)
+    existing = player_ui_fields(existing)
+
+    -- tier/elo always from battle SSE — only preserve cosmetic fields when missing.
+    if (p.avatar_url == nil or p.avatar_url == "") and existing.avatar_url ~= nil and existing.avatar_url ~= "" then
+        p.avatar_url = existing.avatar_url
+    end
+    if (p.name == nil or p.name == "" or p.name == "?") and existing.name ~= nil and existing.name ~= "" then
+        p.name = existing.name
+    end
+    if (p.car_name == nil or p.car_name == "") and existing.car_name ~= nil and existing.car_name ~= "" then
+        p.car_name = existing.car_name
+    end
+    return p
+end
+
+function battle_parse.merge_players_from_previous(ui, prev_ui)
+    if ui == nil or prev_ui == nil then return ui end
+    ui.player_left = battle_parse.merge_player_ui(ui.player_left, prev_ui.player_left)
+    ui.player_right = battle_parse.merge_player_ui(ui.player_right, prev_ui.player_right)
+    return ui
 end
 
 function battle_parse.is_terminal_ui(ui)
@@ -375,10 +413,11 @@ function battle_parse.lobby_from_profile(profile, ctx)
     ctx = ctx or {}
     local left = {
         name = util.safe_str(profile.name ~= "" and profile.name or "?"),
-        tier = tonumber(profile.tier) or 0,
+        tier = profile.tier_from_raw(profile),
         avatar_url = profile.avatar_url,
         car_name = util.safe_str(profile.car_name ~= "" and profile.car_name or ctx.car_name),
         role = "",
+        elo = parse_elo(profile),
     }
     return {
         state = "pairing",
@@ -498,7 +537,7 @@ function battle_parse.to_ui(raw, local_steam_id)
         position_fallback = raw.positionFallback == true or raw.position_fallback == true,
         winner_name = winner_name(raw, local_player, looking and nil or opponent),
         show_gap = (is_active or is_armed) and not looking,
-        show_scores = is_active or is_terminal or is_draw,
+        show_scores = is_active,
         show_prep_scores = state_name == "pairing" and not looking,
         gap = gap,
         gap3d_m = gap.current,

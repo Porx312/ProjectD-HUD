@@ -1,75 +1,40 @@
-﻿--[[ Shared mutable fetch/cache state — one instance for all HUD windows. ]]
+﻿--[[ Shared mutable HUD state — one instance for all windows. ]]
 
 local STATE_KEY = "__ProjectDHudSharedState_v1"
 
 local function create_state()
     return {
         cached_at = 0,
-        cached_filter = "global",
         cached_bundle = nil,
-        fetch_pending = false,
-        profile_fetch_pending = false,
+
         last_http_status = nil,
         last_error = nil,
-        last_fetch_at = 0,
-        last_attempt_at = 0,
-        last_profile_attempt_at = 0,
-        last_version_attempt_at = 0,
-        last_version_poll_at = 0,
-        last_hud_refresh_at = 0,
-        last_hud_backup_sync_at = 0,
-        profile_fetch_started_at = 0,
-        session_fetch_started_at = 0,
-        version_fetch_started_at = 0,
-        fetch_attempt = 0,
-        profile_fetch_attempt = 0,
-        version_fetch_attempt = 0,
-        profile_candidates_exhausted = false,
-        server_name_candidates = nil,
-        profile_server_candidates = nil,
-        version_server_candidates = nil,
-        last_resolved_server_name = nil,
         last_session_had_players = false,
+
         last_tick_at = -1,
         tick_count = 0,
+
         last_fetch_url = "",
         last_fetch_kind = "",
         last_web_event = "",
+
         web_inflight = nil,
         web_queue = {},
-        filter_bundles = {},
-        fetch_car_filter = nil,
-        scheduled_filter_fetch = nil,
-        filter_fetch_at = {},
-        hud_version = "1.0.26",
-        hud_lb_version = "",
-        hud_player_versions = {},
-        version_fetch_pending = false,
-        version_cache_ok = false,
-        active_car_filter = "global",
+        web_stream = nil,
 
-        CONTEXT_RETRY_SEC = 0.5,
+        hud_version = "",
+
         TICK_INTERVAL_SEC = 0.25,
-        PROFILE_RETRY_SEC = 8,
-        PROFILE_FETCH_TIMEOUT_SEC = 12,
-        SESSION_FETCH_TIMEOUT_SEC = 15,
-        VERSION_FETCH_TIMEOUT_SEC = 12,
 
         steam_override_storage = ac.storage("ProjectD-HUD:steam_id", ""),
         steam_cache_storage = ac.storage("ProjectD-HUD:steam_cache", ""),
         server_override_storage = ac.storage("ProjectD-HUD:server_name", ""),
-        battle_server_override_storage = ac.storage("ProjectD-HUD:battle_server_name", ""),
-        last_server_tried = "",
-        server_names_tried = nil,
 
         battle_snapshot_raw = nil,
         battle_ui = nil,
         battle_last_error = nil,
-        battle_server_candidates = nil,
         battle_result_hold_until = 0,
         battle_last_event_ts = 0,
-        battle_last_resolved_server_name = nil,
-        battle_last_server_tried = "",
         battle_event_shown_at = 0,
         battle_last_snapshot_at = 0,
         battle_last_applied_at = 0,
@@ -84,13 +49,12 @@ local function create_state()
         battle_sse_buffer = "",
         battle_sse_stream_pending = false,
         battle_sse_last_body_len = 0,
-        battle_sse_server_attempt = 0,
         battle_sse_session_key = "",
         battle_sse_connected_at = 0,
         battle_sse_last_activity_at = 0,
         battle_sse_mode = nil,
         battle_sse_steam_id = "",
-        battle_reconnect_requested = false,
+
         battle_last_event_name = "",
         battle_last_sse_summary = "",
         battle_last_payload_summary = "",
@@ -98,8 +62,8 @@ local function create_state()
         battle_last_debug_stage = "",
         battle_last_clear_reason = "",
         battle_last_trace_at = 0,
+
         battle_tcp = nil,
-        web_stream = nil,
     }
 end
 

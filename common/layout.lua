@@ -2,20 +2,12 @@
 
 local layout = {}
 
-layout.PAD_TOP10 = 4
-layout.TOP10_PAD = 2
-layout.TOP10_SELECT_H = 28
-layout.TOP10_SELECT_GAP = 4
-layout.TOP10_HEADER_H = layout.TOP10_SELECT_H + layout.TOP10_SELECT_GAP
-layout.TOP10_ROW_COUNT = 10
-layout.TOP10_ROW_SCALE = 1.5
---- Legacy aliases
-layout.PAD_TOP5 = layout.PAD_TOP10
-layout.TOP5_PAD = layout.TOP10_PAD
-layout.TOP5_SELECT_H = layout.TOP10_SELECT_H
-layout.TOP5_SELECT_GAP = layout.TOP10_SELECT_GAP
-layout.TOP5_HEADER_H = layout.TOP10_HEADER_H
-layout.TOP5_ROW_SCALE = layout.TOP10_ROW_SCALE
+layout.PAD_COMPETITION = 4
+layout.COMPETITION_PAD = 3
+layout.COMPETITION_ROW_COUNT = 3
+layout.COMPETITION_CENTER_SCALE = 1.48
+layout.COMPETITION_SIDE_INSET = 8
+layout.COMPETITION_ROW_SCALE = 1.0
 layout.ROW_H = 40
 layout.CARD_EDGE_PAD = 4
 layout.AVATAR_Y_EXTRA = 2
@@ -33,7 +25,7 @@ layout.LEADERBOARD_DESIGN = {
     header_h = 204,
     header_pad_x = 48,
     header_gap = 20,
-    title = "TOP 10",
+    title = "COMPETITION",
     title_fs = 108,
     meta_fs = 92,
     sep_h = 2,
@@ -45,7 +37,7 @@ layout.LEADERBOARD_DESIGN = {
 layout.PANEL_NATIVE = vec2(1795, 533.17)
 layout.PANEL_ASPECT = layout.PANEL_NATIVE.x / layout.PANEL_NATIVE.y
 
---- Medidas profile/rival (canvas 1795×533) — no tocar al cambiar Top 5.
+--- Medidas profile (canvas 1795×533).
 layout.PROFILE_DESIGN = {
     avatar = 465.7,
     name_fs = 188,
@@ -54,7 +46,6 @@ layout.PROFILE_DESIGN = {
     avatar_gap = 52,
     name_tier_gap = 38,
     line_gap = 20,
-    rival_label_fs = 70,
 }
 
 function layout.panel_scale(panel_size)
@@ -72,15 +63,12 @@ function layout.profile_metrics(panel_size)
         avatar_gap = d.avatar_gap * s,
         name_tier_gap = d.name_tier_gap * s,
         line_gap = d.line_gap * s,
-        rival_label_fs = d.rival_label_fs * s,
     }
 end
 
 layout.SIZE = {
-    top10   = vec2(300, 554),
-    top5    = vec2(300, 554),
+    competition = vec2(300, 240),
     profile = vec2(280, 84),
-    rival   = vec2(280, 84),
     battle  = vec2(800, 142),
 }
 
@@ -136,6 +124,7 @@ layout.BATTLE_DESIGN = {
     center_event = { cx = 0, cy = 0.85, ty = -6 },         -- toast inferior (puntos)
     center_score_left = { cx = -168, cy = 0.46, ty = -2.5 },
     center_score_right = { cx = 168, cy = 0.46, ty = -2.5 },
+    center_score_vs = { cx = 0, cy = 0.46, ty = -2.5 },
     center_countdown = { cx = 0, cy = 0.40 },              -- 5→1 / GO!
     countdown_hint = { cx = 0, cy = 0.72 },                -- hint bajo countdown
 
@@ -154,14 +143,15 @@ layout.BATTLE_DESIGN = {
     center_draw_score = { cx = 0, cy = 0.58 },
 
     result_avatar_size = 80,
-    result_name_fs = 52,
-    result_score_fs = 64,
-    draw_label_fs = 140,
-    draw_score_fs = 90,
+    result_name_fs = 104,
+    result_score_fs = 128,
+    draw_label_fs = 280,
+    draw_score_fs = 180,
 
     name_fs = 105,
     car_fs = 94,
     score_fs = 190,
+    score_vs_fs = 88,
     mode_fs = 72,
     countdown_fs = 240,
     role_fs = 68,
@@ -170,12 +160,21 @@ layout.BATTLE_DESIGN = {
     event_fs = 68,
     tier_size = 152,
     name_car_gap = 14,
+
+    --- Chip tier + ELO dentro del avatar (esquina interior)
+    avatar_chip_tier_sz = 96,
+    avatar_chip_elo_fs = 52,
+    avatar_chip_pad = 10,
+    avatar_chip_inner_gap = 10,
+    avatar_chip_radius = 22,
+    avatar_chip_inset = 12,
+    avatar_chip_bottom_inset = 4,
 }
 
 function layout.battle_scale(panel_size)
-    if panel_size == nil then return 0 end
-    local pw = tonumber(panel_size.x) or tonumber(panel_size[0]) or 0
-    if pw <= 0 then return 0 end
+    if panel_size == nil then return -1 end
+    local pw = tonumber(panel_size.x) or tonumber(panel_size[-1]) or 0
+    if pw <= 0 then return -1 end
     return pw / layout.BATTLE_NATIVE.x
 end
 
@@ -299,6 +298,19 @@ function layout.battle_avatar_circle(panel_o, panel_size, side)
     return vec2(ox, oy), size
 end
 
+--- Origen del chip tier+ELO dentro del círculo del avatar (esquina interior).
+function layout.battle_avatar_chip_origin(circle_o, circle_sz, side, chip_w, chip_h, scale)
+    local d = layout.BATTLE_DESIGN
+    scale = scale or 1
+    local h_inset = math.max((d.avatar_chip_inset or 12) * scale, circle_sz * 0.05)
+    local bottom_inset = math.max((d.avatar_chip_bottom_inset or 4) * scale, circle_sz * 0.02)
+    local y = circle_o.y + circle_sz - chip_h - bottom_inset
+    if side == "right" then
+        return vec2(circle_o.x + h_inset, y)
+    end
+    return vec2(circle_o.x + circle_sz - chip_w - h_inset, y)
+end
+
 --- Overlay looking: mismo tamaño/offset que battle_avatar_circle (perfil derecho).
 function layout.battle_searching_rect(panel_o, panel_size)
     local d = layout.BATTLE_DESIGN
@@ -333,6 +345,7 @@ function layout.battle_metrics(panel_size)
         name_fs = d.name_fs * s,
         car_fs = d.car_fs * s,
         score_fs = d.score_fs * s,
+        score_vs_fs = d.score_vs_fs * s,
         mode_fs = d.mode_fs * s,
         countdown_fs = d.countdown_fs * s,
         role_fs = d.role_fs * s,
@@ -347,15 +360,15 @@ function layout.battle_metrics(panel_size)
         result_score_fs = d.result_score_fs * s,
         draw_label_fs = d.draw_label_fs * s,
         draw_score_fs = d.draw_score_fs * s,
+        chip_tier_sz = d.avatar_chip_tier_sz * s,
+        chip_elo_fs = d.avatar_chip_elo_fs * s,
+        chip_pad = d.avatar_chip_pad * s,
+        chip_inner_gap = d.avatar_chip_inner_gap * s,
+        chip_radius = d.avatar_chip_radius * s,
         design = d,
     }
 end
 
---- Alias leaderboard row count.
-layout.TOP8_ROW_COUNT = layout.TOP10_ROW_COUNT
-layout.TOP5_ROW_COUNT = layout.TOP10_ROW_COUNT
-
---- Rect del panel profile dentro de la ventana.
 function layout.panel_fit(win_size)
     local aspect = layout.PANEL_ASPECT
     local draw_w, draw_h
@@ -391,6 +404,11 @@ function layout.leaderboard_fit(win_size)
     return vec2(ox, oy), vec2(draw_w, draw_h)
 end
 
+--- Competition usa toda la ventana (sin letterbox del panel vertical).
+function layout.competition_fit(win_size)
+    return vec2(0, 0), win_size
+end
+
 function layout.leaderboard_scale(panel_size)
     return panel_size.x / layout.LEADERBOARD_NATIVE.x
 end
@@ -415,50 +433,55 @@ function layout.corners_all()
     return 15
 end
 
---- Métricas Top 10: cabecera + listado dentro del panel.
-function layout.top10_content(panel_size)
-    local pad = layout.TOP10_PAD
-    local rows = layout.TOP10_ROW_COUNT
-    local header = layout.leaderboard_header_metrics(panel_size)
-    local list_top = header.header_h + pad
-    local list_h = panel_size.y - list_top - pad
-    local row_h = list_h / rows
-    local scale = layout.TOP10_ROW_SCALE
-    local rh = row_h / 46
+--- Métricas Competition: 3 filas (rival arriba · tú · rival abajo), sin cabecera ni filtro.
+function layout.competition_content(panel_size)
+    local pad = layout.COMPETITION_PAD
+    local rows = layout.COMPETITION_ROW_COUNT
+    local list_top = pad
+    local list_h = math.max(1, panel_size.y - pad * 2)
+    local center_scale = layout.COMPETITION_CENTER_SCALE
+    local row_gap = 2
+    local total_gap = row_gap * (rows - 1)
+    local avail = list_h - total_gap
+    local side_row_h = avail / (2 + center_scale)
+    local center_row_h = side_row_h * center_scale
+    local rh = side_row_h / 40
 
-    local name_fs = math.min(17, math.max(12, math.floor(15 * scale * rh)))
-    local sub_fs = math.min(14, math.max(11, math.floor(13 * scale * rh)))
-    local time_fs = math.min(18, math.max(10, math.floor(name_fs * 0.95)))
-    local name_gap = math.max(2, math.floor(3 * rh))
-    local avatar = math.floor(row_h * 0.76)
-    local tier = math.floor(row_h * 0.64)
-    local rank_col = math.max(22, math.floor(24 * scale))
-    local tier_gap = 6
-    local time_gap = 6
-    local trailing_pad = 8
-    local label_fs = math.max(9, math.floor(10 * scale * rh))
+    local name_fs = math.min(13, math.max(9, math.floor(11 * rh)))
+    local car_fs = math.min(name_fs, math.max(8, name_fs - 1))
+    local time_fs = math.min(12, math.max(8, math.floor(name_fs * 0.95)))
+    local center_name_fs = math.min(15, math.max(11, math.floor(name_fs * 1.2)))
+    local center_car_fs = math.min(center_name_fs, math.max(9, center_name_fs - 1))
+    local center_time_fs = math.min(14, math.max(10, math.floor(time_fs * 1.12)))
 
     return {
         pad = pad,
         list_top = list_top,
-        row_h = row_h,
+        side_row_h = side_row_h,
+        center_row_h = center_row_h,
+        row_heights = {
+            side_row_h,
+            center_row_h,
+            side_row_h,
+        },
         row_count = rows,
-        header = header,
         content_width = panel_size.x - pad * 2,
-        avatar = avatar,
-        rank_col = rank_col,
+        avatar = math.max(14, math.floor(side_row_h * 0.68)),
+        center_avatar = math.max(18, math.floor(center_row_h * 0.72)),
+        rank_col = math.max(16, math.floor(18 * rh)),
         name_fs = name_fs,
-        sub_fs = sub_fs,
+        car_fs = car_fs,
         time_fs = time_fs,
-        name_gap = name_gap,
-        tier = tier,
-        tier_gap = tier_gap,
-        time_gap = time_gap,
-        trailing_pad = trailing_pad,
-        label_fs = label_fs,
+        center_name_fs = center_name_fs,
+        center_car_fs = center_car_fs,
+        center_time_fs = center_time_fs,
+        tier = math.max(12, math.floor(side_row_h * 0.48)),
+        center_tier = math.max(14, math.floor(center_row_h * 0.45)),
+        side_row_inset = math.max(4, math.floor(layout.COMPETITION_SIDE_INSET * rh)),
+        row_gap = row_gap,
+        text_gap = math.max(2, math.floor(3 * rh)),
+        trailing_pad = 4,
     }
 end
-
-layout.top5_content = layout.top10_content
 
 return layout

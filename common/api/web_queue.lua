@@ -53,7 +53,7 @@ end
 local function start_stream_item(item)
     ensure_web_timeouts(true)
     state.last_fetch_url = item.url
-    state.last_fetch_kind = item.kind or "battle_sse"
+    state.last_fetch_kind = item.kind or "hud_sse"
 
     if web == nil or web.get == nil then
         state.web_stream = nil
@@ -136,8 +136,10 @@ local function start_stream_item(item)
         item.request = result
     end
 
-    if item.kind == "battle_sse" and item.callbacks and item.callbacks.on_open then
-        pcall(item.callbacks.on_open)
+    if item.kind == "hud_sse" or item.kind == "battle_sse" then
+        if item.callbacks and item.callbacks.on_open then
+            pcall(item.callbacks.on_open)
+        end
     end
 end
 
@@ -233,11 +235,16 @@ end
 
 function web_queue.get(url, kind, callback)
     if state.web_queue == nil then state.web_queue = {} end
-    state.web_queue[#state.web_queue + 1] = {
+    local item = {
         url = url,
         kind = kind or "http",
         callback = callback,
     }
+    if kind == "avatar" then
+        table.insert(state.web_queue, 1, item)
+    else
+        state.web_queue[#state.web_queue + 1] = item
+    end
     web_queue.pump()
 end
 

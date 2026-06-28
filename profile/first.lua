@@ -10,7 +10,7 @@ function mod.init()
     images.init()
     local p = data.get_player_profile()
     if p ~= nil then
-        images.request_avatar(images.resolve_url(p.name, p.avatar_url))
+        images.prefetch_avatar(p.name, p.avatar_url)
     end
 end
 
@@ -30,13 +30,17 @@ function mod.main(dt)
 
     local profile = data.get_player_profile()
     if profile ~= nil then
-        images.request_avatar(images.resolve_url(profile.name, profile.avatar_url))
+        images.prefetch_avatar(profile.name, profile.avatar_url)
     end
+
     if profile == nil then
         ui.pushDWriteFont(theme.fonts.reg)
-        local msg = "No profile data"
-        if data.get_status_message ~= nil then
-            msg = data.get_status_message("profile")
+        local msg = "Loading profile..."
+        if data.is_loading ~= nil and not data.is_loading() then
+            msg = "No profile data"
+            if data.get_status_message ~= nil then
+                msg = data.get_status_message("profile") or msg
+            end
         end
         local tw = ui.measureDWriteText(msg, 13).x
         ui.dwriteDrawText(msg, 13, vec2((win.x - tw) * 0.5, math.max(8, (win.y - 13) * 0.35)), theme.colors.muted)

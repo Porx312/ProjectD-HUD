@@ -1,20 +1,23 @@
 #!/usr/bin/env bash
-# Quick smoke test for Battle HUD SSE endpoint (run on VPS or with API access).
+# Quick smoke test for unified HUD SSE stream (run on VPS or with API access).
 set -euo pipefail
 
 API_BASE="${API_BASE:-http://13.140.160.131:3000}"
-SERVER_NAME="${1:-ProjectD}"
-STEAM_ID="${2:-}"
+STEAM_ID="${1:-}"
 API_KEY="${API_KEY:-}"
+CAR_MODEL="${CAR_MODEL:-}"
 
 if [[ -z "$STEAM_ID" ]]; then
-  echo "Usage: $0 <serverName> <steamId> [api_key]"
+  echo "Usage: $0 <steamId> [api_key] [carModel]"
   exit 1
 fi
 
-ENC_SERVER=$(python3 -c "import urllib.parse; print(urllib.parse.quote('''$SERVER_NAME'''))")
 ENC_STEAM=$(python3 -c "import urllib.parse; print(urllib.parse.quote('''$STEAM_ID'''))")
-URL="${API_BASE}/hud/battle/stream?serverName=${ENC_SERVER}&steamId=${ENC_STEAM}"
+URL="${API_BASE}/hud/stream?steamId=${ENC_STEAM}&carFilter=global"
+if [[ -n "$CAR_MODEL" ]]; then
+  ENC_CAR=$(python3 -c "import urllib.parse; print(urllib.parse.quote('''$CAR_MODEL'''))")
+  URL="${URL}&carModel=${ENC_CAR}"
+fi
 if [[ -n "$API_KEY" ]]; then
   ENC_KEY=$(python3 -c "import urllib.parse; print(urllib.parse.quote('''$API_KEY'''))")
   URL="${URL}&api_key=${ENC_KEY}"
