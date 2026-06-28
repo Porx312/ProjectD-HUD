@@ -3,6 +3,7 @@
 local theme = require("common.theme")
 local layout = require("common.layout")
 local images = require("common.images")
+local profile = require("common.api.profile")
 
 local draw_battle = {}
 
@@ -205,7 +206,7 @@ local function draw_avatar_stats_chip(circle_o, circle_sz, side, player, m)
     if circle_o == nil then return end
     theme.ensure_fonts()
 
-    local tier = tonumber(player.tier) or 0
+    local tier = profile.tier_for_display(player)
     local elo_text = format_elo_text(player.elo)
     local tier_sz = m.chip_tier_sz
     local elo_fs = m.chip_elo_fs
@@ -218,7 +219,8 @@ local function draw_avatar_stats_chip(circle_o, circle_sz, side, player, m)
 
     local row_h = math.max(tier_sz, elo_fs)
     local chip_h = row_h + pad * 2
-    local chip_w = pad + tier_sz + gap + elo_w + pad
+    local tier_block = tier_sz + gap
+    local chip_w = pad + tier_block + elo_w + pad
     local chip_o = layout.battle_avatar_chip_origin(circle_o, circle_sz, side, chip_w, chip_h, m.scale)
     local radius = math.max(m.chip_radius, chip_h * 0.45)
 
@@ -233,15 +235,11 @@ local function draw_avatar_stats_chip(circle_o, circle_sz, side, player, m)
     local tier_y = pad + (row_h - tier_sz) * 0.5
     local elo_y = pad + (row_h - elo_fs) * 0.5
 
-    draw_tier_badge(
-        chip_o + vec2(pad, tier_y),
-        tier,
-        tier_sz
-    )
+    draw_tier_badge(chip_o + vec2(pad, tier_y), tier, tier_sz)
     draw_text_anchored(
         elo_text,
         elo_fs,
-        vec2(chip_o.x + pad + tier_sz + gap, chip_o.y + elo_y),
+        vec2(chip_o.x + pad + tier_block, chip_o.y + elo_y),
         "left",
         theme.colors.white,
         theme.fonts.medium

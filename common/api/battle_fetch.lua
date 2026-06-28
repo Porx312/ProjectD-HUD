@@ -3,6 +3,7 @@
 local config = require("common.config")
 local state = require("common.api.state")
 local util = require("common.api.util")
+local profile = require("common.api.profile")
 local battle_parse = require("common.api.battle_parse")
 
 local battle_fetch = {}
@@ -130,6 +131,14 @@ function battle_fetch.apply_snapshot(raw, local_steam_id, now)
 
     local prev_ui = state.battle_ui
     battle_parse.merge_players_from_previous(ui, prev_ui)
+
+    local bundled_prof = profile.coalesce_profile(state.cached_bundle and state.cached_bundle.profile)
+    local session_tier = profile.tier_for_display(bundled_prof)
+    if session_tier > 0 and ui.player_left ~= nil and ui.player_left.placeholder ~= true then
+        if profile.tier_for_display(ui.player_left) <= 0 then
+            ui.player_left = battle_parse.merge_player_ui({ tier = session_tier }, ui.player_left)
+        end
+    end
 
     if util.is_presence_fatal(state.last_error) then
         state.last_error = nil

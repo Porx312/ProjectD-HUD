@@ -24,11 +24,13 @@ end
 
 local function hud_stream_loading()
     if state.cached_bundle ~= nil then return false end
+    if util.should_show_presence_error(state.last_error) then return false end
     if state.battle_sse_stream_pending then return true end
-    if util.is_online_with_steam() and not util.should_show_presence_error(state.last_error) then
-        return true
+    if not state.battle_sse_connected then
+        local ok, ctx = pcall(context.read_session_context)
+        return ok and context.context_is_ready(ctx)
     end
-    return false
+    return (state.battle_sse_last_activity_at or 0) <= 0
 end
 
 local function profile_missing_message()

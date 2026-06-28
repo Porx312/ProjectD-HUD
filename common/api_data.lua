@@ -29,7 +29,7 @@ local function slot_from_rival(entry)
     return {
         rank = tonumber(entry.rank) or 0,
         name = entry.name or "?",
-        tier = profile.tier_from_raw(entry),
+        tier = profile.tier_for_display(entry),
         lap_ms = tonumber(entry.lap_ms or entry.best_lap_ms) or 0,
         car_name = entry.car_name or "",
         avatar_url = entry.avatar_url,
@@ -75,9 +75,9 @@ function api.is_loading()
     if state.cached_bundle ~= nil then return false end
     local ok, ctx = pcall(context.read_session_context)
     if not ok or not context.context_is_ready(ctx) then return false end
-    return state.battle_sse_stream_pending
-        or not state.battle_sse_connected
-        or util.is_online_with_steam()
+    if state.battle_sse_stream_pending then return true end
+    if not state.battle_sse_connected then return true end
+    return (state.battle_sse_last_activity_at or 0) <= 0
 end
 
 function api.get_status()
@@ -124,7 +124,7 @@ function api.get_player_profile()
         return {
             name = p.name or "?",
             rank = tonumber(p.rank) or 0,
-            tier = profile.tier_from_raw(p),
+            tier = profile.tier_for_display(p),
             best_lap_ms = tonumber(p.best_lap_ms) or 0,
             car_name = p.car_name or "",
             car_id = p.car_id or "",
@@ -146,7 +146,7 @@ function api.get_competition_ladder(_car_filter)
         local center = {
             rank = rank,
             name = p.name,
-            tier = profile.tier_from_raw(p),
+            tier = profile.tier_for_display(p),
             lap_ms = p.best_lap_ms,
             car_name = p.car_name,
             avatar_url = p.avatar_url,

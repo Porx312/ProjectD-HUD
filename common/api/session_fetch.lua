@@ -39,7 +39,12 @@ function session_fetch.apply_update(raw, steam_id)
         state.hud_version = ver
     end
 
-    local data = parse.normalize_session_response(raw, steam_id)
+    local ok_parse, data = pcall(parse.normalize_session_response, raw, steam_id)
+    if not ok_parse then
+        state.last_error = "parse_error"
+        ac.debug("ProjectD-HUD session", "parse fail: " .. tostring(data))
+        return
+    end
     if data == nil then return end
 
     bundle.apply_bundle(data)

@@ -82,34 +82,28 @@ function images.get_tier_path(tier)
     return tier_textures[n]
 end
 
---- Dibuja badge de tier: fallback numérico siempre + PNG encima si existe.
+--- Dibuja icono de tier (tier0.png … tier10.png). Solo PNG local, sin fallback.
 function images.draw_tier_badge(pos, tier, tier_sz)
     if pos == nil then return end
-    tier_sz = math.max(10, tonumber(tier_sz) or 24)
-    tier = math.max(0, math.min(10, math.floor(tonumber(tier) or 0)))
 
-    local ok_theme, theme = pcall(require, "common.theme")
-    if ok_theme and theme.ensure_fonts ~= nil then
-        theme.ensure_fonts()
+    local ok_prof, profile_mod = pcall(require, "common.api.profile")
+    local parsed = 0
+    if ok_prof and profile_mod.tier_for_display ~= nil then
+        if type(tier) == "table" then
+            parsed = profile_mod.tier_for_display(tier)
+        else
+            parsed = profile_mod.tier_for_display({ tier = tier })
+        end
+    else
+        parsed = math.floor(tonumber(tier) or 0)
     end
+    if parsed < 0 or parsed > 10 then return end
 
-    local center = pos + vec2(tier_sz / 2, tier_sz / 2)
-    local fallback_col = ok_theme and theme.colors.tier_fallback or rgbm(0.85, 0.15, 0.12, 1)
-    ui.drawCircleFilled(center, tier_sz / 2, fallback_col, 16)
-    ui.drawCircle(center, tier_sz / 2, rgbm(1, 1, 1, 1), 16, 1)
+    tier_sz = math.max(8, tonumber(tier_sz) or 24)
+    local path = images.get_tier_path(parsed)
+    if path == nil then return end
 
-    local label = tostring(tier)
-    local fs = math.max(10, tier_sz * 0.42)
-    local font = ok_theme and theme.fonts.bold or "Orbitron;Weight=Bold"
-    ui.pushDWriteFont(font)
-    local tw = ui.measureDWriteText(label, fs).x
-    ui.dwriteDrawText(label, fs, pos + vec2((tier_sz - tw) / 2, (tier_sz - fs) / 2), rgbm(1, 1, 1, 1))
-    ui.popDWriteFont()
-
-    local path = images.get_tier_path(tier)
-    if path ~= nil then
-        ui.drawImage(path, pos, pos + vec2(tier_sz, tier_sz))
-    end
+    ui.drawImage(path, pos, pos + vec2(tier_sz, tier_sz))
 end
 
 function images.request_avatar(url)

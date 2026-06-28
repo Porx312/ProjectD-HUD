@@ -59,28 +59,47 @@ function profile.parse_tier(value)
         return profile.parse_tier(pick_field(
             value,
             "tier", "tierLevel", "tier_level", "skillTier", "skill_tier",
-            "level", "index", "value", "rank"
+            "level", "index", "value"
         ))
     end
     return nil
 end
 
+--- Tier para UI (0–10). 0 = sin dato del SSE / placeholder.
+function profile.tier_for_display(value)
+    if type(value) == "number" then
+        local t = profile.parse_tier(value)
+        if t ~= nil then return t end
+        return 0
+    end
+    if value == nil then return 0 end
+    if type(value) == "table" then
+        local t = profile.parse_tier(value.tier) or profile.tier_from_raw(value)
+        if t ~= nil then return t end
+        return 0
+    end
+    return 0
+end
+
+--- Alias interno (compat).
+function profile.effective_tier(value)
+    return profile.tier_for_display(value)
+end
+
 function profile.tier_from_raw(tbl)
-    if tbl == nil or type(tbl) ~= "table" then return 0 end
+    if tbl == nil or type(tbl) ~= "table" then return nil end
     local t = profile.parse_tier(pick_field(
         tbl,
         "tier", "tierLevel", "tier_level", "skillTier", "skill_tier"
     ))
     if t ~= nil then return t end
     if type(tbl.profile) == "table" then
-        t = profile.tier_from_raw(tbl.profile)
-        if t > 0 then return t end
+        return profile.tier_from_raw(tbl.profile)
     end
     if type(tbl.stats) == "table" then
-        t = profile.tier_from_raw(tbl.stats)
-        if t > 0 then return t end
+        return profile.tier_from_raw(tbl.stats)
     end
-    return 0
+    return nil
 end
 
 local function is_profile_table(value)
@@ -246,30 +265,6 @@ local function apply_time_attack_sources(merged, raw)
     return rivals_source
 end
 
-local function row_api_payload(row, session_raw)
-    local payload = { ok = true }
-    if type(session_raw) == "table" then
-        payload.times_on_track = session_raw.times_on_track or session_raw.timesOnTrack
-        payload.global_times = session_raw.global_times or session_raw.globalTimes
-        payload.ok = session_raw.ok
-        if type(session_raw.profile) == "table" and row ~= nil and row.profile == nil then
-            payload.profile = session_raw.profile
-        end
-    end
-    if row == nil then return payload end
-    if type(row.profile) == "table" then
-        payload.profile = row.profile
-        for k, v in pairs(row) do
-            if k ~= "profile" and type(v) ~= "table" then
-                payload[k] = v
-            end
-        end
-    else
-        payload.profile = row
-    end
-    return payload
-end
-
 local function absorb_fields(into, source, depth)
     if type(source) ~= "table" or type(into) ~= "table" then return end
     depth = depth or 0
@@ -299,6 +294,34 @@ local function absorb_fields(into, source, depth)
     end
 end
 
+local function row_api_payload(row, session_raw)
+    local payload = { ok = true }
+    if type(session_raw) == "table" then
+        payload.times_on_track = session_raw.times_on_track or session_raw.timesOnTrack
+        payload.global_times = session_raw.global_times or session_raw.globalTimes
+        payload.ok = session_raw.ok
+    end
+    if row == nil then return payload end
+    if type(row.context) == "table" then
+        payload.context = row.context
+    end
+    if type(row.profile) == "table" then
+        payload.profile = row.profile
+        for k, v in pairs(row) do
+            if k ~= "profile" and k ~= "context" and type(v) ~= "table" then
+                payload[k] = v
+            end
+        end
+    else
+        payload.profile = row
+    end
+    return payload
+end
+
+function profile.from_session_player(row, session_raw)
+    return profile.coalesce_from_api(row_api_payload(row, session_raw))
+end
+
 function profile.avatar_from_raw(tbl)
     return resolve_avatar_url(pick_avatar_raw(tbl))
 end
@@ -311,7 +334,7 @@ function profile.normalize_rival_entry(entry)
     return {
         rank = rank or 0,
         name = name ~= "" and name or "?",
-        tier = profile.tier_from_raw(entry),
+        tier = profile.tier_for_display(entry),
         lap_ms = normalize_lap_ms(
             pick_field(entry, "lap_ms", "best_lap_ms", "bestLapMs", "lapMs", "bestLap", "time")
         ),
@@ -366,6 +389,9 @@ function profile.normalize_profile(value, rivals_source)
         )
     )
     local tier = profile.parse_tier(pick_field(value, "tier", "tierLevel", "tier_level", "skillTier", "skill_tier"))
+    if tier == nil and type(value.profile) == "table" then
+        tier = profile.tier_from_raw(value.profile)
+    end
     local avatar = resolve_avatar_url(pick_avatar_raw(value))
     local elo = tonumber(pick_field(value, "elo", "mmr", "rating"))
     local invalidated = value.isInvalidated == true or value.is_invalidated == true
@@ -444,7 +470,7 @@ function profile.pick_player_profile(players, steam_id, session_raw)
     if #list == 0 then return nil, nil end
 
     local function from_row(row)
-        return profile.coalesce_from_api(row_api_payload(row, session_raw))
+        return profile.from_session_player(row, session_raw)
     end
 
     if #list == 1 then

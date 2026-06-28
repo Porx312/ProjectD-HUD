@@ -3,6 +3,7 @@
 local theme = require("common.theme")
 local images = require("common.images")
 local layout = require("common.layout")
+local profile = require("common.api.profile")
 
 local draw = {}
 
@@ -299,7 +300,7 @@ function draw.competition_row(origin, entry, opts)
     ui.dwriteDrawText(time_str, time_fs, vec2(time_x, cy - time_fs * 0.5), theme.colors.accent)
     ui.popDWriteFont()
 
-    draw.tier_badge(vec2(tier_x, cy - tier_sz * 0.5), entry.tier, tier_sz)
+    draw.tier_badge(vec2(tier_x, cy - tier_sz * 0.5), profile.tier_for_display(entry), tier_sz)
 end
 
 local function profile_name_text(entry)
@@ -331,7 +332,8 @@ local function measure_text_column(entry, opts, m)
 
     local name_sz = measure_dwrite(theme.fonts.bold, name_text, m.name_fs)
     local sub_sz = measure_dwrite(theme.fonts.medium, car_prefix .. " - " .. time_str, m.sub_fs)
-    local name_row_w = name_sz.x + m.name_tier_gap + m.tier
+    local tier_w = math.max(14, m.tier) + m.name_tier_gap
+    local name_row_w = name_sz.x + tier_w
     local text_w = math.max(name_row_w, sub_sz.x)
     local text_h = name_sz.y + m.line_gap + sub_sz.y
 
@@ -358,10 +360,11 @@ function draw.profile_card(panel_o, panel_size, entry, opts)
     ui.dwriteDrawText(name_text, m.name_fs, vec2(tx, text_y), theme.colors.white)
     ui.popDWriteFont()
 
+    local tier_n = profile.tier_for_display(entry)
     local tier_x = tx + name_sz.x + m.name_tier_gap
     local name_center_y = text_y + name_sz.y * 0.5
     local tier_y = name_center_y - m.tier * 0.5
-    draw.tier_badge(vec2(tier_x, tier_y), entry.tier, math.max(14, m.tier))
+    draw.tier_badge(vec2(tier_x, tier_y), tier_n, math.max(14, m.tier))
 
     local sub_y = text_y + name_sz.y + m.line_gap
 

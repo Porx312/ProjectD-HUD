@@ -43,7 +43,7 @@ local function player_from_api(p)
     end
     return {
         name = name ~= "" and name or "?",
-        tier = profile.tier_from_raw(p),
+        tier = profile.tier_for_display(p),
         avatar_url = profile.avatar_from_raw(p),
         car_name = util.safe_str(p.car_name),
         car_id = util.safe_str(p.car_id),
@@ -376,6 +376,13 @@ function battle_parse.merge_player_ui(incoming, existing)
     if (p.car_name == nil or p.car_name == "") and existing.car_name ~= nil and existing.car_name ~= "" then
         p.car_name = existing.car_name
     end
+    -- Snapshots de telemetry pueden omitir tier/elo; ac-data los rellena en otro push.
+    if profile.tier_for_display(p) <= 0 and profile.tier_for_display(existing) > 0 then
+        p.tier = existing.tier
+    end
+    if (p.elo == nil or tonumber(p.elo) <= 0) and existing.elo ~= nil and tonumber(existing.elo) > 0 then
+        p.elo = existing.elo
+    end
     return p
 end
 
@@ -408,16 +415,16 @@ function battle_parse.is_terminal_raw(raw)
     return false
 end
 
-function battle_parse.lobby_from_profile(profile, ctx)
-    profile = profile or {}
+function battle_parse.lobby_from_profile(player_profile, ctx)
+    player_profile = player_profile or {}
     ctx = ctx or {}
     local left = {
-        name = util.safe_str(profile.name ~= "" and profile.name or "?"),
-        tier = profile.tier_from_raw(profile),
-        avatar_url = profile.avatar_url,
-        car_name = util.safe_str(profile.car_name ~= "" and profile.car_name or ctx.car_name),
+        name = util.safe_str(player_profile.name ~= "" and player_profile.name or "?"),
+        tier = profile.tier_for_display(player_profile),
+        avatar_url = player_profile.avatar_url,
+        car_name = util.safe_str(player_profile.car_name ~= "" and player_profile.car_name or ctx.car_name),
         role = "",
-        elo = parse_elo(profile),
+        elo = parse_elo(player_profile),
     }
     return {
         state = "pairing",
