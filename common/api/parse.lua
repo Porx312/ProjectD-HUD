@@ -59,18 +59,16 @@ function parse.normalize_session_response(data, steam_id)
     local player_list = iter_players(data.players)
     state.last_session_had_players = #player_list > 0
 
+    local player_profile, player_row = profile.pick_player_profile(data.players, steam_id, data)
+
     local out = {
         ok = true,
         context = data.context,
-        profile = profile.coalesce_from_api(data),
+        profile = player_profile or profile.coalesce_from_api(data),
     }
 
-    local player_profile, player_row = profile.pick_player_profile(data.players, steam_id, data)
     if player_row ~= nil then
         if player_row.context ~= nil then out.context = player_row.context end
-        if player_profile ~= nil then
-            out.profile = profile.merge_profiles(out.profile, player_profile)
-        end
         profile.apply_player_lookup_error(player_row, out.profile, steam_id)
     elseif out.profile == nil and data.context ~= nil then
         state.last_error = "profile_unavailable"

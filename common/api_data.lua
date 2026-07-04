@@ -9,6 +9,7 @@ local battle_fetch = require("common.api.battle_fetch")
 local hud_transport = require("common.api.battle_transport")
 local battle_parse = require("common.api.battle_parse")
 local status = require("common.api.status")
+local session_version = require("common.api.session_version")
 
 local api = {}
 
@@ -57,6 +58,7 @@ function api.tick(_car_filter)
         local ok_step = pcall(function()
             util.clear_stale_presence_error()
             pcall(hud_transport.tick, ctx, now)
+            pcall(session_version.tick, ctx, now)
         end)
         if not ok_step then
             state.last_error = "tick_error"
@@ -68,6 +70,10 @@ function api.tick(_car_filter)
     if ok_img and images.tick ~= nil then
         pcall(images.tick)
     end
+end
+
+function api.is_account_restricted()
+    return state.last_error == "user_invalidated"
 end
 
 function api.is_loading()
@@ -121,17 +127,22 @@ function api.get_player_profile()
     local raw = state.cached_bundle and state.cached_bundle.profile
     local p = profile.coalesce_profile(raw)
     if p ~= nil and p.isInvalidated ~= true then
+        local rivals = p.rivals or { above = nil, below = nil }
+        local rival = p.rival or rivals.above
         return {
             name = p.name or "?",
             rank = tonumber(p.rank) or 0,
             tier = profile.tier_for_display(p),
             best_lap_ms = tonumber(p.best_lap_ms) or 0,
+            last_lap_ms = tonumber(p.last_lap_ms) or 0,
+            lap_ms = profile.display_lap_ms(p),
             car_name = p.car_name or "",
             car_id = p.car_id or "",
             avatar_url = p.avatar_url,
             steam_id = p.steam_id or p.steamId,
-            elo = p.elo,
-            rivals = p.rivals,
+            elo = tonumber(p.elo),
+            rival = rival,
+            rivals = rivals,
         }
     end
     if profile_blocked() then return nil end
@@ -147,7 +158,7 @@ function api.get_competition_ladder(_car_filter)
             rank = rank,
             name = p.name,
             tier = profile.tier_for_display(p),
-            lap_ms = p.best_lap_ms,
+            lap_ms = profile.display_lap_ms(p),
             car_name = p.car_name,
             avatar_url = p.avatar_url,
             elo = p.elo,
@@ -180,7 +191,10 @@ function api.get_battle()
         return nil
     end
 
-    return battle_parse.lobby_from_profile(api.get_player_profile(), ctx)
+    local prof = api.get_player_profile()
+    if prof == nil then return nil end
+
+    return battle_parse.lobby_from_profile(prof)
 end
 
 function api.reset_session_state()
@@ -196,6 +210,9 @@ function api.reset_session_state()
     state.web_inflight = nil
     state.web_stream = nil
     state.hud_version = ""
+    state.session_seq = 0
+    state.version_poll_at = 0
+    state.version_poll_inflight = false
     bundle.clear_cache()
     hud_transport.reset()
 end

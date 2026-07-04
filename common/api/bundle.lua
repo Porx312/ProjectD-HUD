@@ -1,4 +1,4 @@
-﻿--[[ Cached session bundle (profile + context + rivals from session:update). ]]
+﻿--[[ Cached session bundle (profile + context + rivals from hud_session SSE). ]]
 
 local state = require("common.api.state")
 local util = require("common.api.util")
@@ -10,6 +10,7 @@ function bundle.apply_bundle(data)
 
     state.cached_bundle = data
     state.cached_at = os.clock()
+    state.session_seq = (state.session_seq or 0) + 1
     if state.last_error ~= "user_invalidated" then
         state.last_error = nil
     end

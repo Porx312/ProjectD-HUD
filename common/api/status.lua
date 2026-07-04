@@ -87,9 +87,7 @@ function status.get_status_message(kind)
     local st = status.get_status()
 
     if state.last_error == "user_invalidated" then
-        if kind == "profile" or kind == "competition" then
-            return "Account restricted"
-        end
+        return "Account restricted"
     end
 
     local presence = presence_message()

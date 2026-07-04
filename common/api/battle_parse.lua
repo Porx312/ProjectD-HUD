@@ -45,13 +45,28 @@ local function player_from_api(p)
         name = name ~= "" and name or "?",
         tier = profile.tier_for_display(p),
         avatar_url = profile.avatar_from_raw(p),
-        car_name = util.safe_str(p.car_name),
-        car_id = util.safe_str(p.car_id),
+        car_name = util.safe_str(p.car_name or p.carName),
+        car_id = util.safe_str(p.car_id or p.carId or p.carModel),
         role = string.lower(util.safe_str(p.role)),
         steam_id = sid,
         score = tonumber(p.score) or 0,
         elo = parse_elo(p),
     }
+end
+
+local function merge_scalar_stat(incoming, existing, key)
+    local inc = incoming[key]
+    if key == "tier" then
+        if profile.tier_for_display(incoming) > 0 then return inc end
+        if profile.tier_for_display(existing) > 0 then return existing[key] end
+        return inc
+    end
+    if key == "elo" then
+        if inc ~= nil and tonumber(inc) > 0 then return inc end
+        if existing ~= nil and tonumber(existing[key]) > 0 then return existing[key] end
+        return inc
+    end
+    return inc
 end
 
 local function opponent_missing(opponent)
@@ -446,10 +461,21 @@ local function player_ui_fields(player)
         tier = player.tier,
         avatar_url = player.avatar_url,
         car_name = player.car_name,
+        car_id = player.car_id,
         role = player.role,
         elo = player.elo,
         placeholder = player.placeholder == true,
     }
+end
+
+local function incoming_is_full_player(incoming)
+    if incoming == nil or type(incoming) ~= "table" then return false end
+    if incoming.placeholder == true then return true end
+    if util.safe_str(incoming.name) ~= "" and util.safe_str(incoming.name) ~= "?" then return true end
+    if util.safe_str(incoming.car_name) ~= "" then return true end
+    if incoming.avatar_url ~= nil and incoming.avatar_url ~= "" then return true end
+    if util.safe_str(incoming.steam_id) ~= "" then return true end
+    return false
 end
 
 function battle_parse.merge_player_ui(incoming, existing)
@@ -459,26 +485,19 @@ function battle_parse.merge_player_ui(incoming, existing)
         return player_ui_fields(incoming)
     end
 
-    local p = player_ui_fields(incoming)
-    existing = player_ui_fields(existing)
+    local inc = player_ui_fields(incoming)
+    local ex = player_ui_fields(existing)
 
-    -- tier/elo always from battle SSE — only preserve cosmetic fields when missing.
-    if (p.avatar_url == nil or p.avatar_url == "") and existing.avatar_url ~= nil and existing.avatar_url ~= "" then
-        p.avatar_url = existing.avatar_url
+    if not incoming_is_full_player(incoming) then
+        local p = ex
+        p.tier = merge_scalar_stat(inc, ex, "tier")
+        p.elo = merge_scalar_stat(inc, ex, "elo")
+        return p
     end
-    if (p.name == nil or p.name == "" or p.name == "?") and existing.name ~= nil and existing.name ~= "" then
-        p.name = existing.name
-    end
-    if (p.car_name == nil or p.car_name == "") and existing.car_name ~= nil and existing.car_name ~= "" then
-        p.car_name = existing.car_name
-    end
-    -- Snapshots de telemetry pueden omitir tier/elo; ac-data los rellena en otro push.
-    if profile.tier_for_display(p) <= 0 and profile.tier_for_display(existing) > 0 then
-        p.tier = existing.tier
-    end
-    if (p.elo == nil or tonumber(p.elo) <= 0) and existing.elo ~= nil and tonumber(existing.elo) > 0 then
-        p.elo = existing.elo
-    end
+
+    local p = inc
+    p.tier = merge_scalar_stat(inc, ex, "tier")
+    p.elo = merge_scalar_stat(inc, ex, "elo")
     return p
 end
 
@@ -511,14 +530,15 @@ function battle_parse.is_terminal_raw(raw)
     return false
 end
 
-function battle_parse.lobby_from_profile(player_profile, ctx)
+function battle_parse.lobby_from_profile(player_profile, _ctx)
     player_profile = player_profile or {}
-    ctx = ctx or {}
+    local name = util.safe_str(player_profile.name)
     local left = {
-        name = util.safe_str(player_profile.name ~= "" and player_profile.name or "?"),
+        name = name ~= "" and name or "?",
         tier = profile.tier_for_display(player_profile),
         avatar_url = player_profile.avatar_url,
-        car_name = util.safe_str(player_profile.car_name ~= "" and player_profile.car_name or ctx.car_name),
+        car_name = util.safe_str(player_profile.car_name),
+        car_id = util.safe_str(player_profile.car_id),
         role = "",
         elo = parse_elo(player_profile),
     }

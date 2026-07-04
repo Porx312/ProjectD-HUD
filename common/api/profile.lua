@@ -119,6 +119,31 @@ local function normalize_lap_ms(value)
     return v
 end
 
+local function pick_best_lap_ms(tbl)
+    if tbl == nil or type(tbl) ~= "table" then return 0 end
+    return normalize_lap_ms(pick_field(
+        tbl,
+        "best_lap_ms", "bestLapMs", "bestLap", "best_lap", "bestTimeMs", "bestTime"
+    ))
+end
+
+local function pick_last_lap_ms(tbl)
+    if tbl == nil or type(tbl) ~= "table" then return 0 end
+    if pick_field(tbl, "last_lap_ms", "lastLapMs", "last_lap", "lastLap") ~= nil then
+        return normalize_lap_ms(pick_field(tbl, "last_lap_ms", "lastLapMs", "last_lap", "lastLap"))
+    end
+    return normalize_lap_ms(pick_field(tbl, "lap_ms", "lapMs", "lap_time_ms", "lapTime", "time_ms", "time"))
+end
+
+--- Tiempo a mostrar en HUD: última vuelta si existe, si no el mejor tiempo.
+function profile.display_lap_ms(value)
+    local p = profile.coalesce_profile(value)
+    if p == nil then return 0 end
+    local last = tonumber(p.last_lap_ms) or 0
+    if last > 0 then return last end
+    return tonumber(p.best_lap_ms) or 0
+end
+
 local function resolve_avatar_url(url)
     if url == nil or url == "" then return nil end
     if type(url) == "table" then
@@ -156,7 +181,7 @@ end
 local function is_stats_entry(tbl)
     if tbl == nil or type(tbl) ~= "table" then return false end
     if type(tbl.rivals) == "table" then return true end
-    if pick_field(tbl, "rank", "position", "tier", "tierLevel", "best_lap_ms", "bestLapMs", "lap_ms", "elo") ~= nil then
+    if pick_field(tbl, "rank", "position", "tier", "tierLevel", "best_lap_ms", "bestLapMs", "last_lap_ms", "lastLapMs", "lap_ms", "elo") ~= nil then
         return true
     end
     return false
@@ -208,15 +233,8 @@ local function merge_stats_into(merged, stats)
 
     fill_scalar(merged, "rank", tonumber(pick_field(stats, "rank", "position", "globalRank", "leaderboardRank", "lbRank")))
     fill_scalar(merged, "tier", profile.parse_tier(pick_field(stats, "tier", "tierLevel", "tier_level", "skillTier", "skill_tier")))
-    fill_scalar(
-        merged,
-        "best_lap_ms",
-        normalize_lap_ms(pick_field(
-            stats,
-            "best_lap_ms", "bestLapMs", "lap_ms", "lapMs", "lap_time_ms", "bestTimeMs", "time_ms",
-            "bestLap", "best_lap", "lapTime", "lap_time", "time", "bestTime"
-        ))
-    )
+    fill_scalar(merged, "best_lap_ms", pick_best_lap_ms(stats))
+    fill_scalar(merged, "last_lap_ms", pick_last_lap_ms(stats))
     fill_scalar(merged, "elo", tonumber(pick_field(stats, "elo", "mmr", "rating")))
 
     local car_name = util.safe_str(pick_field(stats, "car_name", "carName", "car", "vehicle", "vehicleName"))
@@ -231,6 +249,46 @@ local function merge_stats_into(merged, stats)
     if type(stats.rivals) == "table" then
         merged.rivals = stats.rivals
     end
+end
+
+--- hud_session — profile del jugador sustituye rivals y tiempos (sin mezclar con bloques viejos).
+local function overlay_session_profile_fields(merged, prof)
+    if merged == nil or prof == nil or type(prof) ~= "table" then return end
+
+    if type(prof.rivals) == "table" then
+        merged.rivals = prof.rivals
+        merged.rival = prof.rivals.above
+    elseif prof.rival ~= nil then
+        merged.rival = prof.rival
+    end
+
+    if pick_field(prof, "best_lap_ms", "bestLapMs", "bestLap", "best_lap") ~= nil then
+        merged.best_lap_ms = pick_best_lap_ms(prof)
+    end
+    if pick_field(prof, "last_lap_ms", "lastLapMs", "last_lap", "lastLap", "lap_ms", "lapMs") ~= nil then
+        merged.last_lap_ms = pick_last_lap_ms(prof)
+    end
+
+    local rank = tonumber(pick_field(prof, "rank", "position", "globalRank", "leaderboardRank", "lbRank"))
+    if rank ~= nil then merged.rank = rank end
+
+    local tier = profile.parse_tier(pick_field(prof, "tier", "tierLevel", "tier_level", "skillTier", "skill_tier"))
+    if tier ~= nil then merged.tier = tier end
+
+    if pick_field(prof, "elo", "mmr", "rating") ~= nil then
+        merged.elo = tonumber(pick_field(prof, "elo", "mmr", "rating"))
+    end
+
+    local name = util.safe_str(pick_field(prof, "name", "displayName", "display_name", "playerName", "player_name"))
+    if name ~= "" then merged.name = name end
+
+    local avatar = resolve_avatar_url(pick_avatar_raw(prof))
+    if avatar ~= nil then merged.avatar_url = avatar end
+
+    local car_name = util.safe_str(pick_field(prof, "car_name", "carName", "car", "vehicle", "vehicleName"))
+    if car_name ~= "" then merged.car_name = car_name end
+    local car_id = util.safe_str(pick_field(prof, "car_id", "carId", "carModel", "vehicleId"))
+    if car_id ~= "" then merged.car_id = car_id end
 end
 
 local function apply_time_attack_sources(merged, raw)
@@ -261,6 +319,12 @@ local function apply_time_attack_sources(merged, raw)
     end
     if type(merged.rivals) == "table" then
         rivals_source = merged
+    end
+    if type(raw.profile) == "table" then
+        overlay_session_profile_fields(merged, raw.profile)
+        if type(raw.profile.rivals) == "table" then
+            rivals_source = raw.profile
+        end
     end
     return rivals_source
 end
@@ -319,6 +383,15 @@ local function row_api_payload(row, session_raw)
 end
 
 function profile.from_session_player(row, session_raw)
+    if type(row) ~= "table" then
+        return profile.coalesce_from_api(row_api_payload(row, session_raw))
+    end
+    if type(row.profile) == "table" then
+        return profile.normalize_profile(row.profile, row.profile)
+    end
+    if is_profile_table(row) then
+        return profile.normalize_profile(row, row)
+    end
     return profile.coalesce_from_api(row_api_payload(row, session_raw))
 end
 
@@ -336,7 +409,7 @@ function profile.normalize_rival_entry(entry)
         name = name ~= "" and name or "?",
         tier = profile.tier_for_display(entry),
         lap_ms = normalize_lap_ms(
-            pick_field(entry, "lap_ms", "best_lap_ms", "bestLapMs", "lapMs", "bestLap", "time")
+            pick_field(entry, "lap_ms", "last_lap_ms", "lastLapMs", "best_lap_ms", "bestLapMs", "lapMs", "bestLap", "time")
         ),
         car_name = util.safe_str(pick_field(entry, "car_name", "carName", "car")),
         car_id = util.safe_str(pick_field(entry, "car_id", "carId", "carModel")),
@@ -351,6 +424,7 @@ function profile.has_board_data(p)
     if p == nil then return false end
     if (tonumber(p.rank) or 0) > 0 then return true end
     if (tonumber(p.best_lap_ms) or 0) > 0 then return true end
+    if (tonumber(p.last_lap_ms) or 0) > 0 then return true end
     if (tonumber(p.tier) or 0) > 0 then return true end
     local rivals = p.rivals
     if rivals ~= nil and (rivals.above ~= nil or rivals.below ~= nil) then return true end
@@ -363,6 +437,10 @@ function profile.normalize_rivals(raw)
     end
     local rivals = raw.rivals
     if rivals == nil or type(rivals) ~= "table" then
+        local legacy = profile.normalize_rival_entry(raw.rival)
+        if legacy ~= nil then
+            return { above = legacy, below = nil }
+        end
         return { above = nil, below = nil }
     end
     local above = profile.normalize_rival_entry(rivals.above)
@@ -381,13 +459,8 @@ function profile.normalize_profile(value, rivals_source)
     local rank = tonumber(pick_field(value, "rank", "position", "leaderboardRank", "globalRank", "lbRank"))
     if rank == nil and (name ~= "" or sid ~= "") then rank = 0 end
     if name == "" and sid == "" and rank == nil then return nil end
-    local best_lap = normalize_lap_ms(
-        pick_field(
-            value,
-            "best_lap_ms", "bestLapMs", "lap_ms", "lapMs", "lap_time_ms", "bestTimeMs", "time_ms",
-            "bestLap", "best_lap", "lapTime", "lap_time", "time", "bestTime"
-        )
-    )
+    local best_lap = pick_best_lap_ms(value)
+    local last_lap = pick_last_lap_ms(value)
     local tier = profile.parse_tier(pick_field(value, "tier", "tierLevel", "tier_level", "skillTier", "skill_tier"))
     if tier == nil and type(value.profile) == "table" then
         tier = profile.tier_from_raw(value.profile)
@@ -405,12 +478,14 @@ function profile.normalize_profile(value, rivals_source)
         rank = rank or 0,
         tier = tier or 0,
         best_lap_ms = best_lap or 0,
+        last_lap_ms = last_lap or 0,
         car_name = util.safe_str(pick_field(value, "car_name", "carName", "car", "vehicle", "vehicleName")),
         car_id = util.safe_str(pick_field(value, "car_id", "carId", "carModel", "vehicleId")),
         avatar_url = avatar,
         steam_id = sid ~= "" and sid or nil,
         steamId = sid ~= "" and sid or nil,
         elo = elo,
+        rival = rivals.above,
         isInvalidated = invalidated,
         rivals = rivals,
     }
@@ -525,46 +600,8 @@ function profile.apply_player_lookup_error(player_row, p, steam_id)
     end
 end
 
-function profile.merge_profiles(existing, incoming)
-    incoming = profile.coalesce_profile(incoming)
-    existing = profile.coalesce_profile(existing)
-    if incoming == nil then return existing end
-    if existing == nil then return incoming end
-
-    local p = {}
-    for k, v in pairs(incoming) do p[k] = v end
-
-    if (p.best_lap_ms or 0) <= 0 and (existing.best_lap_ms or 0) > 0 then
-        p.best_lap_ms = existing.best_lap_ms
-    end
-    if (p.tier or 0) <= 0 and (existing.tier or 0) > 0 then
-        p.tier = existing.tier
-    end
-    if (p.rank or 0) <= 0 and (existing.rank or 0) > 0 then
-        p.rank = existing.rank
-    end
-    if (p.avatar_url == nil or p.avatar_url == "") and existing.avatar_url ~= nil and existing.avatar_url ~= "" then
-        p.avatar_url = existing.avatar_url
-    end
-    if (p.name == nil or p.name == "" or p.name == "?") and existing.name ~= nil and existing.name ~= "" then
-        p.name = existing.name
-    end
-    if p.car_name == nil or p.car_name == "" then
-        p.car_name = existing.car_name
-    end
-    if (p.elo == nil or p.elo <= 0) and existing.elo ~= nil and existing.elo > 0 then
-        p.elo = existing.elo
-    end
-    if p.rivals == nil or (p.rivals.above == nil and p.rivals.below == nil) then
-        p.rivals = existing.rivals or p.rivals
-    else
-        local r = p.rivals or { above = nil, below = nil }
-        local e = existing.rivals or { above = nil, below = nil }
-        if r.above == nil then r.above = e.above end
-        if r.below == nil then r.below = e.below end
-        p.rivals = r
-    end
-    return p
+function profile.merge_profiles(_existing, incoming)
+    return profile.coalesce_profile(incoming)
 end
 
 return profile

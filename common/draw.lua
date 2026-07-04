@@ -156,6 +156,33 @@ function draw.card_panel(win_origin, win_size)
     return po, ps
 end
 
+--- Mensaje de estado centrado y grande (p. ej. Account restricted).
+function draw.center_status_message(origin, size, text, opts)
+    theme.ensure_fonts()
+    opts = opts or {}
+    text = tostring(text or "")
+    if text == "" then return end
+
+    local min_dim = math.min(tonumber(size.x) or 0, tonumber(size.y) or 0)
+    local fs = opts.fs
+    if fs == nil then
+        fs = math.max(16, math.min(56, min_dim * 0.28))
+        local len = #text
+        if len > 18 then fs = fs * 0.82 end
+        if len > 26 then fs = fs * 0.72 end
+    end
+
+    local font = opts.font or theme.fonts.bold
+    local color = opts.color or theme.colors.rival_tag
+    local cy = opts.cy or 0.5
+    local pt = origin + vec2(size.x * 0.5, size.y * cy)
+
+    ui.pushDWriteFont(font)
+    local tw = ui.measureDWriteText(text, fs).x
+    ui.dwriteDrawText(text, fs, vec2(pt.x - tw * 0.5, pt.y - fs * 0.52), color)
+    ui.popDWriteFont()
+end
+
 function draw.avatar_circle(pos, url, size)
     if pos == nil then return end
     size = math.max(4, math.floor(tonumber(size) or 32) + 0.5)
@@ -227,27 +254,22 @@ function draw.competition_row(origin, entry, opts)
     local trailing_pad = opts.trailing_pad or 4
     local row_size = vec2(content_w, row_h)
 
-    ui.setCursor(origin)
-    ui.invisibleButton(row_id, row_size)
-    local hovered = ui.itemHovered()
-    local is_self = entry.is_self == true
+    if opts.no_input ~= true then
+        ui.setCursor(origin)
+        ui.invisibleButton(row_id, row_size)
+        local hovered = ui.itemHovered()
+        if hovered then
+            ui.drawRectFilled(origin, origin + row_size, rgbm(1, 1, 1, 0.06), 4, layout.corners_all())
+        end
+    end
 
-    if is_self then
-        ui.drawRect(
-            origin,
-            origin + row_size,
-            theme.colors.accent,
-            5,
-            layout.corners_all(),
-            math.max(1, row_h * 0.04)
-        )
-    elseif hovered then
-        ui.drawRectFilled(origin, origin + row_size, rgbm(1, 1, 1, 0.06), 5, layout.corners_all())
+    local is_self = entry.is_self == true
+    if is_self and opts.no_input ~= true then
+        ui.drawRectFilled(origin, origin + row_size, rgbm(1, 1, 1, 0.04), 4, layout.corners_all())
     end
 
     local rank_color = theme.colors.white
     if entry.rank == 1 then rank_color = theme.colors.accent end
-    if is_self then rank_color = theme.colors.battle_vs or theme.colors.accent end
 
     local cy = origin.y + row_h * 0.5
     local tier_x = origin.x + content_w - trailing_pad - tier_sz
@@ -328,7 +350,7 @@ end
 local function measure_text_column(entry, opts, m)
     local name_text = profile_name_text(entry)
     local car_prefix = car_line_prefix(entry, opts)
-    local time_str = theme.format_lap(entry.best_lap_ms or entry.lap_ms)
+    local time_str = theme.format_lap(entry.lap_ms or entry.last_lap_ms or entry.best_lap_ms)
 
     local name_sz = measure_dwrite(theme.fonts.bold, name_text, m.name_fs)
     local sub_sz = measure_dwrite(theme.fonts.medium, car_prefix .. " - " .. time_str, m.sub_fs)

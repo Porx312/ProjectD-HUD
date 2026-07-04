@@ -85,11 +85,16 @@ function mock.get_player_profile()
         avatar_url = p.avatar_url,
         steam_id = ctx.player_steam_id,
         elo = p.elo,
+        rival = p.rivals and p.rivals.above or nil,
         rivals = p.rivals,
     }
 end
 
 function mock.tick() end
+
+function mock.is_account_restricted()
+    return false
+end
 
 function mock.get_status_message(kind)
     if kind == "profile" or kind == "competition" then return nil end

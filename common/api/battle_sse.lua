@@ -33,6 +33,52 @@ local function normalize_payload(payload)
     return payload
 end
 
+local function infer_event_name(payload)
+    if payload == nil or type(payload) ~= "table" then return nil end
+
+    if payload.ok == false and payload.players == nil
+        and (payload.reason ~= nil or payload.error ~= nil) then
+        return "hud_error"
+    end
+
+    if payload.players ~= nil then
+        return "hud_session"
+    end
+
+    if payload.version ~= nil and payload.state == nil and payload.battleId == nil
+        and payload.player1 == nil and payload.players == nil then
+        return "hud_version"
+    end
+
+    if payload.ok == false and (payload.state ~= nil or payload.battleId ~= nil) then
+        return "battle"
+    end
+
+    if payload.state ~= nil or payload.battleId ~= nil or payload.player1 ~= nil then
+        return "battle"
+    end
+
+    if payload.ok == true and payload.version ~= nil then
+        return "hud_session"
+    end
+
+    return nil
+end
+
+local function canonical_event_name(event_name, payload)
+    event_name = trim_line(event_name)
+    if event_name == "message" then event_name = "" end
+
+    if event_name ~= "" then
+        if event_name == "session:update" then return "hud_session" end
+        if event_name == "session:error" then return "hud_error" end
+        if event_name == "battle:update" or event_name == "battle:clear" then return "battle" end
+        return event_name
+    end
+
+    return infer_event_name(payload)
+end
+
 local function dispatch_event(event_name, data_str, ctx)
     local now = os.clock()
     local payload = normalize_payload(util.parse_json_body(data_str))
@@ -41,45 +87,36 @@ local function dispatch_event(event_name, data_str, ctx)
         return
     end
 
-    event_name = trim_line(event_name)
-    if event_name == "" or event_name == "message" then
-        if payload.ok == false and payload.players == nil
-            and (payload.reason ~= nil or payload.error ~= nil) then
-            event_name = "session:error"
-        elseif payload.players ~= nil or (payload.ok == true and payload.version ~= nil) then
-            event_name = "session:update"
-        elseif payload.ok == false then
-            event_name = "battle:clear"
-        elseif payload.state ~= nil or payload.battleId ~= nil or payload.player1 ~= nil then
-            event_name = "battle:update"
-        else
-            event_name = "battle:update"
-        end
+    event_name = canonical_event_name(event_name, payload)
+    if event_name == nil then
+        battle_fetch.debug("sse unknown payload")
+        return
     end
 
+    state.battle_last_event_name = event_name
     local steam_id = ctx ~= nil and ctx.player_steam_id or state.battle_sse_steam_id or ""
 
-    if event_name == "session:update" then
+    if event_name == "hud_version" then
+        session_fetch.apply_version(payload)
+        return
+    end
+
+    if event_name == "hud_session" then
         session_fetch.apply_update(payload, steam_id)
         return
     end
 
-    if event_name == "session:error" then
+    if event_name == "hud_error" then
         session_fetch.apply_error(payload)
         return
     end
 
-    if event_name == "battle:update" then
+    if event_name == "battle" then
         if payload.ok == false then
             battle_fetch.handle_battle_clear(payload, now)
             return
         end
         battle_fetch.apply_snapshot(payload, steam_id, now)
-        return
-    end
-
-    if event_name == "battle:clear" then
-        battle_fetch.handle_battle_clear(payload, now)
         return
     end
 

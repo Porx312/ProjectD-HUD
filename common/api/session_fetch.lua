@@ -1,4 +1,4 @@
---[[ Apply session:update / session:error from unified HUD SSE stream. ]]
+--[[ Apply hud_session / hud_version / hud_error from unified HUD SSE stream. ]]
 
 local state = require("common.api.state")
 local util = require("common.api.util")
@@ -25,6 +25,20 @@ function session_fetch.apply_error(raw)
     end
 end
 
+function session_fetch.apply_version(raw)
+    if raw == nil or type(raw) ~= "table" then return end
+    local ver = util.safe_str(raw.version)
+    if ver == "" then return end
+
+    local prev = state.hud_version
+    if prev ~= "" and prev ~= ver then
+        bundle.clear_cache()
+        hud_debug("hud_version " .. prev .. " -> " .. ver .. " (cache cleared)")
+    end
+    state.hud_version = ver
+    state.battle_sse_last_activity_at = os.clock()
+end
+
 function session_fetch.apply_update(raw, steam_id)
     if raw == nil or type(raw) ~= "table" then return end
     steam_id = steam.normalize_steam_id(steam_id)
@@ -36,6 +50,11 @@ function session_fetch.apply_update(raw, steam_id)
 
     local ver = util.safe_str(raw.version)
     if ver ~= "" then
+        local prev = state.hud_version
+        if prev ~= "" and prev ~= ver then
+            bundle.clear_cache()
+            hud_debug("version " .. prev .. " -> " .. ver .. " (cache cleared)")
+        end
         state.hud_version = ver
     end
 

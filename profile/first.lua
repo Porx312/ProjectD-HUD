@@ -28,6 +28,11 @@ function mod.main(dt)
 
     draw.card_panel(vec2(0, 0), win)
 
+    if data.is_account_restricted ~= nil and data.is_account_restricted() then
+        draw.center_status_message(vec2(0, 0), win, "Account restricted")
+        return
+    end
+
     local profile = data.get_player_profile()
     if profile ~= nil then
         images.prefetch_avatar(profile.name, profile.avatar_url)

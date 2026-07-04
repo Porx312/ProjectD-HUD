@@ -115,9 +115,13 @@ function battle_fetch.apply_snapshot(raw, local_steam_id, now)
     end
 
     local battle_id = util.safe_str(raw.battleId)
-    if battle_id ~= "" and battle_id ~= (state.battle_last_battle_id or "") then
-        if state.battle_last_battle_id ~= nil and state.battle_last_battle_id ~= "" then
+    local prev_battle_id = state.battle_last_battle_id or ""
+    local battle_id_changed = battle_id ~= "" and battle_id ~= prev_battle_id
+    if battle_id_changed then
+        if prev_battle_id ~= "" then
             reset_battle_session()
+            state.battle_ui = nil
+            state.battle_snapshot_raw = nil
             battle_debug("battleId changed -> reset session " .. battle_id)
         end
         state.battle_last_battle_id = battle_id
@@ -129,7 +133,7 @@ function battle_fetch.apply_snapshot(raw, local_steam_id, now)
         return
     end
 
-    local prev_ui = state.battle_ui
+    local prev_ui = battle_id_changed and nil or state.battle_ui
     battle_parse.merge_players_from_previous(ui, prev_ui)
 
     local bundled_prof = profile.coalesce_profile(state.cached_bundle and state.cached_bundle.profile)

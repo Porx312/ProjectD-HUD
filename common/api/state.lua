@@ -24,6 +24,10 @@ local function create_state()
 
         hud_version = "",
 
+        session_seq = 0,
+        version_poll_at = 0,
+        version_poll_inflight = false,
+
         TICK_INTERVAL_SEC = 0.25,
 
         steam_override_storage = ac.storage("ProjectD-HUD:steam_id", ""),

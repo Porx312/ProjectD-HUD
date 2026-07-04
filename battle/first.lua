@@ -7,16 +7,9 @@ local draw = require("common.draw")
 local images = require("common.images")
 local mod = {}
 
-local use_api = ac.storage("ProjectD-HUD:use_api", true):get()
-
 local function battle_data()
-    if data.get_battle ~= nil then
-        return data.get_battle()
-    end
-    if not use_api then
-        return require("common.mock_data").get_battle()
-    end
-    return nil
+    if data.get_battle == nil then return nil end
+    return data.get_battle()
 end
 
 local function prefetch_avatars(battle)
@@ -44,18 +37,30 @@ function mod.update() end
 function mod.main(dt)
     theme.ensure_fonts()
 
+    local win_origin = vec2(0, 0)
+    local win_size = ui.windowSize()
+    if win_size.x <= 0 or win_size.y <= 0 then
+        return
+    end
+
+    if data.is_account_restricted ~= nil and data.is_account_restricted() then
+        local frame_o, bar_ps = layout.battle_frame_fit(win_size, false)
+        if bar_ps.x > 0 and bar_ps.y > 0 then
+            local bar_o = win_origin + frame_o
+            draw.battle_panel(bar_o, bar_ps)
+            draw.center_status_message(bar_o, bar_ps, "Account restricted")
+        else
+            draw.center_status_message(win_origin, win_size, "Account restricted")
+        end
+        return
+    end
+
     local battle = battle_data()
     if battle == nil then
         return
     end
 
     prefetch_avatars(battle)
-
-    local win_origin = vec2(0, 0)
-    local win_size = ui.windowSize()
-    if win_size.x <= 0 or win_size.y <= 0 then
-        return
-    end
 
     local frame_o, bar_ps, gap_margin, gap_h = layout.battle_frame_fit(win_size, battle.show_gap == true)
     if bar_ps.x <= 0 or bar_ps.y <= 0 then
