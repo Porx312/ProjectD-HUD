@@ -119,12 +119,17 @@ layout.BATTLE_DESIGN = {
     --- Tamaño de fuente: score_fs, countdown_fs, role_fs, event_fs, hint_fs (más abajo).
     --- Probar sin API: ac.storage("ProjectD-HUD:battle_mock_state", "active"|"countdown"|…)
     --]]
-    center_role = { cx = 0, cy = 0.11, ty = 6 },           -- LEAD / CHASE
+    center_role = { cx = 0, cy = 0.11, ty = 6 },           -- LEAD / CHASE (sin PNG)
     center_event_top = { cx = 0, cy = 0.09, ty = 2 },      -- SEPARATED, IDLE, OVERTAKE…
     center_event = { cx = 0, cy = 0.85, ty = -6 },         -- toast inferior (puntos)
     center_score_left = { cx = -168, cy = 0.46, ty = -2.5 },
     center_score_right = { cx = 168, cy = 0.46, ty = -2.5 },
     center_score_vs = { cx = 0, cy = 0.46, ty = -2.5 },
+    --- center_points.png — VS en el PNG; dígitos a los lados, rol arriba, evento abajo
+    center_points_role = { cx = 0, cy = 0.20, ty = 2 },
+    center_points_score_left = { cx = -132, cy = 0.50, ty = -4 },
+    center_points_score_right = { cx = 132, cy = 0.50, ty = -4 },
+    center_points_event = { cx = 0, cy = 0.86, ty = 0 },
     center_countdown = { cx = 0, cy = 0.40 },              -- 5→1 / GO!
     countdown_hint = { cx = 0, cy = 0.72 },                -- hint bajo countdown
 

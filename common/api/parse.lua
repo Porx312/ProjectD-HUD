@@ -10,6 +10,7 @@ local parse = {}
 local function set_parse_error(reason)
     reason = tostring(reason or "")
     if reason == "" then return end
+    if util.should_ignore_error(reason) then return end
     if util.is_presence_fatal(reason) then
         util.apply_presence_error(reason)
         return

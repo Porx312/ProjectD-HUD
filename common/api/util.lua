@@ -94,59 +94,25 @@ function util.decode_json(body)
     return data
 end
 
---- Presence / session errors from ac-data (404) — do not retry.
+--- Presence / session errors from ac-data — do not retry.
 function util.is_presence_fatal(reason)
-    return reason == "player_not_connected"
-        or reason == "not_managed_server"
+    return reason == "not_managed_server"
         or reason == "players_on_different_servers"
 end
 
 function util.presence_message(reason)
-    if reason == "player_not_connected" then return "Not on a ProjectD server" end
     if reason == "not_managed_server" then return "Server not managed by ProjectD" end
     if reason == "players_on_different_servers" then return "Players on different servers" end
     return nil
 end
 
---- Cached profile still valid for display.
-function util.has_usable_profile_cache()
-    local ok, profile_mod = pcall(require, "common.api.profile")
-    if not ok or profile_mod == nil then return false end
-    if state.cached_bundle == nil then return false end
-    local p = profile_mod.coalesce_profile(state.cached_bundle.profile)
-    return p ~= nil and p.isInvalidated ~= true
+--- Legacy ac-data reasons that must not block or display the HUD.
+function util.should_ignore_error(reason)
+    return reason == "player_not_connected"
 end
 
-function util.is_online_with_steam()
-    local ok_ctx, context = pcall(require, "common.api.context")
-    if not ok_ctx or context == nil then return false end
-    local ok, ctx = pcall(context.read_session_context)
-    if not ok or ctx == nil then return false end
-    if not context.context_is_ready(ctx) then return false end
-    if ctx.is_online == true then return true end
-    if context.is_online_session ~= nil and context.is_online_session() then return true end
-    return false
-end
-
---- Redis presence can expire while the player is still in AC online / battle — do not treat as disconnected.
-function util.ignore_presence_error(reason)
-    if not util.is_presence_fatal(reason) then return false end
-    if reason == "not_managed_server" or reason == "players_on_different_servers" then
-        return false
-    end
-
-    if reason == "player_not_connected" and util.is_online_with_steam() then
-        return true
-    end
-
-    if util.has_usable_profile_cache() then return true end
-
-    local ok, bf = pcall(require, "common.api.battle_fetch")
-    if ok and bf.is_session_live ~= nil and bf.is_session_live() then return true end
-
-    if (state.battle_last_snapshot_at or 0) > 0 or state.battle_ui ~= nil then return true end
-    if (state.cached_at or 0) > 0 and util.is_online_with_steam() then return true end
-
+--- Presence errors from ac-data are always surfaced (no client-side suppression).
+function util.ignore_presence_error(_reason)
     return false
 end
 
@@ -157,6 +123,7 @@ end
 
 function util.apply_presence_error(reason)
     reason = tostring(reason or "")
+    if util.should_ignore_error(reason) then return false end
     if util.ignore_presence_error(reason) then
         ac.debug("ProjectD-HUD presence", "ignored: " .. reason)
         return true
@@ -175,7 +142,7 @@ function util.clear_stale_presence_error()
 end
 
 function util.note_presence_ok()
-    if state.last_error == "player_not_connected" then
+    if util.is_presence_fatal(state.last_error) then
         state.last_error = nil
     end
 end

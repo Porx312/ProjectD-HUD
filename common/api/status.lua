@@ -115,17 +115,11 @@ function status.get_status_message(kind)
         if hud_stream_loading() then
             return "Loading..."
         end
-        if state.last_error == "player_not_connected" and util.is_online_with_steam() then
-            return "Loading..."
-        end
         return profile_missing_message()
     elseif kind == "battle" then
         if battle_fetch.get_battle() ~= nil then return nil end
         if state.battle_ui ~= nil then return nil end
         if state.battle_sse_stream_pending then return "Connecting..." end
-        if state.battle_last_error == "player_not_connected" and util.is_online_with_steam() then
-            return "Connecting..."
-        end
         local battle_err = battle_message()
         if battle_err ~= nil then return battle_err end
         if state.battle_last_error == "http_401" then

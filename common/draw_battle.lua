@@ -4,6 +4,7 @@ local theme = require("common.theme")
 local layout = require("common.layout")
 local images = require("common.images")
 local profile = require("common.api.profile")
+local battle_parse = require("common.api.battle_parse")
 
 local draw_battle = {}
 
@@ -340,7 +341,25 @@ local function battle_center_image_key(battle, phase_state, is_terminal)
     if phase_state == "pairing" and cd ~= nil and cd > 0 then
         return "countdown"
     end
+    if phase_state == "active" then
+        return "points"
+    end
+    if phase_state == "armed" then
+        return "vs"
+    end
     return nil
+end
+
+local function uses_center_points_layout(center_key, center_image_drawn)
+    return center_key == "points" and center_image_drawn == true
+end
+
+local function draw_center_points_event(panel_o, panel_size, event_label, center_text, m, d)
+    if event_label == "" then return end
+    if not live_event_differs_from_center(event_label, center_text) then return end
+    local pt = layout.battle_center_point(panel_o, panel_size, d.center_points_event)
+    local fs = math.max(m.event_fs, panel_size.y * 0.10)
+    draw_text_centered(event_label, fs, pt, theme.colors.white, theme.fonts.bold)
 end
 
 local function battle_center_image_layer(panel_o, panel_size, center_key)
@@ -408,19 +427,31 @@ local function battle_center_text_block(panel_o, panel_size, battle, m, d, phase
         end
     end
 
+    local points_layout = uses_center_points_layout(center_key, center_image_drawn)
+
     if should_show_center_scores(battle, phase_state, is_terminal) then
-        local sl = layout.battle_center_point(panel_o, panel_size, d.center_score_left)
-        local sr = layout.battle_center_point(panel_o, panel_size, d.center_score_right)
-        local vs_pt = layout.battle_center_point(panel_o, panel_size, d.center_score_vs)
-        draw_text_centered(tostring(battle.score_left or 0), m.score_fs, sl, theme.colors.white, theme.fonts.bold)
-        draw_text_centered("VS", m.score_vs_fs, vs_pt, theme.colors.battle_vs, theme.fonts.bold)
-        draw_text_centered(tostring(battle.score_right or 0), m.score_fs, sr, theme.colors.white, theme.fonts.bold)
+        if points_layout then
+            local sl = layout.battle_center_point(panel_o, panel_size, d.center_points_score_left)
+            local sr = layout.battle_center_point(panel_o, panel_size, d.center_points_score_right)
+            draw_text_centered(tostring(battle.score_left or 0), m.score_fs, sl, theme.colors.white, theme.fonts.bold)
+            draw_text_centered(tostring(battle.score_right or 0), m.score_fs, sr, theme.colors.white, theme.fonts.bold)
+        else
+            local sl = layout.battle_center_point(panel_o, panel_size, d.center_score_left)
+            local sr = layout.battle_center_point(panel_o, panel_size, d.center_score_right)
+            local vs_pt = layout.battle_center_point(panel_o, panel_size, d.center_score_vs)
+            draw_text_centered(tostring(battle.score_left or 0), m.score_fs, sl, theme.colors.white, theme.fonts.bold)
+            draw_text_centered("VS", m.score_vs_fs, vs_pt, theme.colors.battle_vs, theme.fonts.bold)
+            draw_text_centered(tostring(battle.score_right or 0), m.score_fs, sr, theme.colors.white, theme.fonts.bold)
+        end
     end
 
     if phase_state == "active" and not is_terminal then
         local role = string.upper(tostring(battle.center_text or battle.mode or ""))
         if role ~= "" and role ~= "ACTIVE" then
-            local rpt = layout.battle_center_point(panel_o, panel_size, d.center_role)
+            local role_pt = points_layout
+                and d.center_points_role
+                or d.center_role
+            local rpt = layout.battle_center_point(panel_o, panel_size, role_pt)
             draw_text_centered(role, m.role_fs, rpt, theme.colors.white, theme.fonts.bold)
         end
     end
@@ -430,7 +461,11 @@ local function battle_center_text_block(panel_o, panel_size, battle, m, d, phase
         event_label = tostring(battle.end_label)
     end
 
-    draw_top_event_banner(panel_o, panel_size, event_label, center_text, m, d, phase_state, is_terminal)
+    if points_layout then
+        draw_center_points_event(panel_o, panel_size, event_label, center_text, m, d)
+    else
+        draw_top_event_banner(panel_o, panel_size, event_label, center_text, m, d, phase_state, is_terminal)
+    end
 
     if is_terminal and is_draw then
         local label_pt = layout.battle_center_point(panel_o, panel_size, d.center_draw_label)
@@ -447,13 +482,8 @@ local function battle_center_text_block(panel_o, panel_size, battle, m, d, phase
     end
 
     if is_terminal and phase_state == "finished" then
-        local winner = tostring(battle.winner_name or "")
-        if winner == "" and battle.winner_player ~= nil then
-            winner = tostring(battle.winner_player.name or "")
-        end
-        if winner == "" then
-            winner = center_text ~= "" and center_text or "WINNER"
-        end
+        local winner = battle_parse.resolve_winner_display(battle)
+        if winner == "" then winner = "WINNER" end
         local label_pt = layout.battle_center_point(panel_o, panel_size, d.center_draw_label)
         local score_pt = layout.battle_center_point(panel_o, panel_size, d.center_draw_score)
         draw_text_centered(winner, math.max(m.result_name_fs, panel_size.y * 0.36), label_pt, theme.colors.white, theme.fonts.bold)

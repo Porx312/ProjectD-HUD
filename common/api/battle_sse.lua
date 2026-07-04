@@ -167,7 +167,9 @@ local function on_stream_closed(err, response, ctx)
     else
         local _, err_reason = util.read_api_response(err, response)
         if err_reason ~= nil then
-            if util.ignore_presence_error(err_reason) then
+            if util.should_ignore_error(err_reason) then
+                battle_fetch.debug("sse ignored: " .. tostring(err_reason))
+            elseif util.ignore_presence_error(err_reason) then
                 battle_fetch.debug("sse presence ignored: " .. tostring(err_reason))
             else
                 state.battle_last_error = err_reason
@@ -206,7 +208,7 @@ local function on_stream_response(err, response, ctx, item)
     local code = util.http_status_code(response)
     if code ~= nil and code ~= 200 then
         local _, err_reason = util.read_api_response(err, response)
-        if err_reason ~= nil and not util.ignore_presence_error(err_reason) then
+        if err_reason ~= nil and not util.should_ignore_error(err_reason) and not util.ignore_presence_error(err_reason) then
             state.battle_last_error = err_reason
         end
         on_stream_closed(err, response, ctx)

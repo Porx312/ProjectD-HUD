@@ -220,18 +220,114 @@ local function event_ts_from_entry(entry)
     return ts
 end
 
-local function winner_name(raw, local_player, opponent)
-    local winner_id = steam.normalize_steam_id(raw.winnerSteamId or raw.winner_steam_id)
+local function name_for_steam_id(winner_id, raw, local_player, opponent)
     if winner_id == "" then return nil end
-    if local_player ~= nil and local_player.steam_id == winner_id then return local_player.name end
-    if opponent ~= nil and opponent.steam_id == winner_id then return opponent.name end
-    if raw.player1 ~= nil and steam.normalize_steam_id(raw.player1.steamId) == winner_id then
+    if local_player ~= nil and local_player.steam_id == winner_id then
+        return util.safe_str(local_player.name)
+    end
+    if opponent ~= nil and opponent.steam_id == winner_id then
+        return util.safe_str(opponent.name)
+    end
+    if raw.player1 ~= nil and steam.normalize_steam_id(raw.player1.steamId or raw.player1.steam_id) == winner_id then
         return util.safe_str(raw.player1.name)
     end
-    if raw.player2 ~= nil and steam.normalize_steam_id(raw.player2.steamId) == winner_id then
+    if raw.player2 ~= nil and steam.normalize_steam_id(raw.player2.steamId or raw.player2.steam_id) == winner_id then
         return util.safe_str(raw.player2.name)
     end
     return nil
+end
+
+local function winner_name_from_fields(raw)
+    local direct = util.safe_str(raw.winnerName or raw.winner_name)
+    if direct ~= "" then return direct end
+
+    local winner = raw.winner
+    if type(winner) == "string" and winner ~= "" then return winner end
+    if type(winner) == "table" then
+        local name = util.safe_str(winner.name or winner.displayName or winner.display_name)
+        if name ~= "" then return name end
+        local wid = steam.normalize_steam_id(winner.steamId or winner.steam_id)
+        if wid ~= "" then
+            return name_for_steam_id(wid, raw, nil, nil)
+        end
+    end
+    return nil
+end
+
+local function winner_name_from_scores(raw, local_player, opponent)
+    local p1 = raw.player1
+    local p2 = raw.player2
+    if type(p1) == "table" and type(p2) == "table" then
+        local s1 = tonumber(raw.player1Score or raw.player1_score or p1.score)
+        local s2 = tonumber(raw.player2Score or raw.player2_score or p2.score)
+        if s1 ~= nil and s2 ~= nil and s1 ~= s2 then
+            if s1 > s2 then
+                local n = util.safe_str(p1.name)
+                if n ~= "" then return n end
+            else
+                local n = util.safe_str(p2.name)
+                if n ~= "" then return n end
+            end
+        end
+    end
+
+    if local_player == nil or opponent == nil then return nil end
+    local sl = tonumber(local_player.score) or 0
+    local sr = tonumber(opponent.score) or 0
+    if sl == sr then return nil end
+    if sl > sr then return util.safe_str(local_player.name) end
+    return util.safe_str(opponent.name)
+end
+
+local function winner_name(raw, local_player, opponent)
+    local from_fields = winner_name_from_fields(raw)
+    if from_fields ~= nil and from_fields ~= "" then return from_fields end
+
+    local winner_id = steam.normalize_steam_id(raw.winnerSteamId or raw.winner_steam_id)
+    if winner_id ~= "" then
+        local by_id = name_for_steam_id(winner_id, raw, local_player, opponent)
+        if by_id ~= nil and by_id ~= "" then return by_id end
+    end
+
+    return winner_name_from_scores(raw, local_player, opponent)
+end
+
+local function winner_player_for_name(name, local_player, opponent)
+    name = util.safe_str(name)
+    if name == "" then return nil end
+    if local_player ~= nil and util.safe_str(local_player.name) == name then
+        return local_player
+    end
+    if opponent ~= nil and util.safe_str(opponent.name) == name then
+        return opponent
+    end
+    return { name = name }
+end
+
+--- Nombre del ganador para pantalla de resultado (UI ya normalizada).
+function battle_parse.resolve_winner_display(ui)
+    if ui == nil then return "" end
+
+    local name = util.safe_str(ui.winner_name)
+    if name == "" and type(ui.winner_player) == "table" then
+        name = util.safe_str(ui.winner_player.name)
+    end
+    if name ~= "" then return name end
+
+    local sl = tonumber(ui.score_left) or 0
+    local sr = tonumber(ui.score_right) or 0
+    if sl ~= sr then
+        if sl > sr and ui.player_left ~= nil and ui.player_left.placeholder ~= true then
+            name = util.safe_str(ui.player_left.name)
+            if name ~= "" then return name end
+        end
+        if sr > sl and ui.player_right ~= nil and ui.player_right.placeholder ~= true then
+            name = util.safe_str(ui.player_right.name)
+            if name ~= "" then return name end
+        end
+    end
+
+    return ""
 end
 
 local function arming_countdown_sec(raw)
@@ -524,6 +620,17 @@ function battle_parse.to_ui(raw, local_steam_id)
         end
     end
 
+    local resolved_winner = winner_name(raw, local_player, looking and nil or opponent)
+    local winner_player = winner_player_for_name(resolved_winner, local_player, looking and nil or opponent)
+    local final_score = util.safe_str(raw.finalScoreText or raw.final_score_text)
+    if final_score == "" and is_terminal and not looking then
+        final_score = string.format(
+            "%d-%d",
+            tonumber(local_player.score) or 0,
+            looking and 0 or (tonumber(opponent.score) or 0)
+        )
+    end
+
     return {
         state = state_name,
         status = status_name,
@@ -542,7 +649,9 @@ function battle_parse.to_ui(raw, local_steam_id)
         end_reason = util.safe_str(raw.endReason or raw.end_reason),
         finish_gap_m = tonumber(raw.finishGapM or raw.finish_gap_m),
         position_fallback = raw.positionFallback == true or raw.position_fallback == true,
-        winner_name = winner_name(raw, local_player, looking and nil or opponent),
+        winner_name = resolved_winner,
+        winner_player = winner_player ~= nil and player_ui_fields(winner_player) or nil,
+        final_score_text = final_score ~= "" and final_score or nil,
         show_gap = (is_active or is_armed) and not looking,
         show_scores = is_active,
         show_prep_scores = state_name == "pairing" and not looking,
