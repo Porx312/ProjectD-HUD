@@ -68,14 +68,15 @@ end
 layout.SIZE = {
     competition = vec2(300, 280),
     profile = vec2(280, 84),
-    battle  = vec2(800, 142),
+    battle  = vec2(800, 172),
 }
 
 --- battle/bg.png — canvas nativo del bar (editar posiciones en BATTLE_DESIGN).
 layout.BATTLE_NATIVE = vec2(3010, 469)
 layout.BATTLE_ASPECT = layout.BATTLE_NATIVE.x / layout.BATTLE_NATIVE.y
-layout.BATTLE_GAP_H = 58
-layout.BATTLE_GAP_MARGIN = 11
+layout.BATTLE_GAP_H = 110
+layout.BATTLE_GAP_MARGIN = 0
+layout.BATTLE_GAP_MIN_PX = 40
 
 --- Coordenadas en canvas 3010×469 — solo cambiar números aquí para mover elementos.
 layout.BATTLE_DESIGN = {
@@ -112,6 +113,7 @@ layout.BATTLE_DESIGN = {
     ---   scale = ancho_panel / 3010
     ---
     --- cx  — px nativos desde el centro horizontal del slot. Negativo = izq, positivo = der.
+    --- cx_frac — fracción del ancho del rect PNG (center_points_score_*); alternativa a cx.
     --- cy  — fracción 0..1 del alto del slot (0 = arriba, 0.5 = mitad, 1 = abajo).
     --- ty  — ajuste fino vertical en px nativos (negativo = subir, positivo = bajar). Opcional.
     ---
@@ -125,29 +127,36 @@ layout.BATTLE_DESIGN = {
     center_score_right = { cx = 168, cy = 0.46, ty = -2.5 },
     center_score_vs = { cx = 0, cy = 0.46, ty = -2.5 },
     --- center_points.png — VS en el PNG; dígitos a los lados, rol arriba, evento abajo
-    center_points_role = { cx = 0, cy = 0.20, ty = 2 },
-    center_points_score_left = { cx = -132, cy = 0.50, ty = -4 },
-    center_points_score_right = { cx = 132, cy = 0.50, ty = -4 },
-    center_points_event = { cx = 0, cy = 0.86, ty = 0 },
+    --- cx_frac: fracción del ancho del PNG contain-fit (±0.34 ≈ huecos laterales del arte)
+    center_points_role = { cx = 0, cy = 0.13, ty = 2 },
+    center_points_score_left = { cx_frac = -0.34, cy = 0.50, ty = -2 },
+    center_points_score_right = { cx_frac = 0.34, cy = 0.50, ty = -2 },
+    center_points_event = { cx = 0, cy = 0.91, ty = 0 },
     center_countdown = { cx = 0, cy = 0.40 },              -- 5→1 / GO!
     countdown_hint = { cx = 0, cy = 0.72 },                -- hint bajo countdown
+    center_phase_label = { cx = 0, cy = 0.50, ty = 0 },    -- CANCELLED, ARMED… (no pairing)
 
-    --- Barra gap 3D (estilo CMRT deltabar) — fracción del ancho del panel
-    gap_bar_x_start = 0.05,
-    gap_bar_x_end = 0.52,
-    gap_bar_pad = 2,
+    --- Barra gap 3D — ancho completo del HUD, sin padding (rectangular)
+    gap_bar_x_start = 0,
+    gap_bar_x_end = 1.0,
+    gap_bar_pad = 0,
+    gap_label_fs = 56,
 
-    --- center-result.png — caja azul: avatar, nombre, puntuación (ej. 1-0)
+    --- Pantalla resultado — "WIN Nombre" arriba, marcador abajo (sin solaparse)
+    center_result_headline = { cx = 0, cy = 0.34, ty = 0 },
+    center_result_score = { cx = 0, cy = 0.62, ty = 0 },
+    --- center-result.png — caja azul horizontal (si existe el asset)
     center_result_avatar = { cx = -200, cy = 0.60, ty = 4 },
     center_result_name = { cx = -50, cy = 0.60, ty = 4 },
-    center_result_score = { cx = 200, cy = 0.60, ty = 4 },
+    center_result_score_inline = { cx = 200, cy = 0.60, ty = 4 },
 
     --- Empate — solo texto grande (sin PNG center_draw)
-    center_draw_label = { cx = 0, cy = 0.42 },
-    center_draw_score = { cx = 0, cy = 0.58 },
+    center_draw_label = { cx = 0, cy = 0.36 },
+    center_draw_score = { cx = 0, cy = 0.64 },
 
     result_avatar_size = 80,
     result_name_fs = 104,
+    result_headline_fs = 88,
     result_score_fs = 128,
     draw_label_fs = 280,
     draw_score_fs = 180,
@@ -157,6 +166,7 @@ layout.BATTLE_DESIGN = {
     score_fs = 190,
     score_vs_fs = 88,
     mode_fs = 72,
+    cancel_label_fs = 112,
     countdown_fs = 240,
     role_fs = 68,
     hint_fs = 28,
@@ -208,12 +218,12 @@ function layout.battle_frame_fit(win_size, include_gap)
     end
 
     local s = win_size.x / layout.BATTLE_NATIVE.x
-    local bar_h = layout.BATTLE_NATIVE.y * s
-    local gap_margin = 0
-    local gap_h = 0
-    if include_gap == true then
-        gap_margin = layout.BATTLE_GAP_MARGIN * s
-        gap_h = layout.BATTLE_GAP_H * s
+    local gap_margin = (layout.BATTLE_GAP_MARGIN or 0) * s
+    local gap_h = math.max((layout.BATTLE_GAP_H or 58) * s, layout.BATTLE_GAP_MIN_PX or 32)
+    local bar_h = win_size.y - gap_margin - gap_h
+    if bar_h < win_size.y * 0.52 then
+        gap_h = math.max(gap_h, win_size.y * 0.34)
+        bar_h = win_size.y - gap_margin - gap_h
     end
     local total_h = bar_h + gap_margin + gap_h
     local oy = 0
@@ -223,13 +233,15 @@ function layout.battle_frame_fit(win_size, include_gap)
     return vec2(0, oy), vec2(win_size.x, bar_h), gap_margin, gap_h
 end
 
-function layout.battle_gap_rect(bar_origin, bar_size, gap_margin, gap_h)
+function layout.battle_gap_rect(bar_origin, bar_size, gap_margin, gap_h, win_origin, win_size)
     local d = layout.BATTLE_DESIGN
-    local x0 = tonumber(d.gap_bar_x_start) or 0.05
-    local x1 = tonumber(d.gap_bar_x_end) or 0.50
+    local x0 = tonumber(d.gap_bar_x_start) or 0
+    local x1 = tonumber(d.gap_bar_x_end) or 1.0
     if x1 < x0 then x0, x1 = x1, x0 end
-    local gx = bar_origin.x + bar_size.x * x0
-    local gw = bar_size.x * (x1 - x0)
+    local base_o = win_origin or bar_origin
+    local base_w = (win_size and win_size.x) or bar_size.x
+    local gx = base_o.x + base_w * x0
+    local gw = base_w * (x1 - x0)
     local gy = bar_origin.y + bar_size.y + gap_margin
     return vec2(gx, gy), vec2(gw, gap_h)
 end
@@ -330,12 +342,24 @@ function layout.battle_searching_rect(panel_o, panel_size)
 end
 
 --- Punto ancla para texto dinámico del centro (ver comentario cx/cy/ty en BATTLE_DESIGN).
---- cx, ty: píxeles nativos (3010) escalados; cy: fracción 0..1 del alto del slot center.
-function layout.battle_center_point(panel_o, panel_size, pt)
+--- cx, ty: píxeles nativos (3010) escalados; cy: fracción 0..1 del alto del rect.
+--- cx_frac: fracción del ancho del rect (p. ej. center_points_score_* sobre PNG contain-fit).
+--- content_o/content_sz opcionales: rect contain-fit del PNG (p. ej. center_points.png).
+function layout.battle_center_point(panel_o, panel_size, pt, content_o, content_sz)
     local d = layout.BATTLE_DESIGN
-    local c_o, c_sz = layout.battle_slot(panel_o, panel_size, d.center)
+    local c_o, c_sz
+    if content_o ~= nil and content_sz ~= nil then
+        c_o, c_sz = content_o, content_sz
+    else
+        c_o, c_sz = layout.battle_slot(panel_o, panel_size, d.center)
+    end
     local s = layout.battle_scale(panel_size)
-    local cx_off = (pt.cx or 0) * s
+    local cx_off
+    if pt.cx_frac ~= nil then
+        cx_off = c_sz.x * pt.cx_frac
+    else
+        cx_off = (pt.cx or 0) * s
+    end
     local cy_frac = pt.cy or 0.5
     local ty_off = (pt.ty or 0) * s
     return vec2(c_o.x + c_sz.x * 0.5 + cx_off, c_o.y + c_sz.y * cy_frac + ty_off)
@@ -351,16 +375,19 @@ function layout.battle_metrics(panel_size)
         score_fs = d.score_fs * s,
         score_vs_fs = d.score_vs_fs * s,
         mode_fs = d.mode_fs * s,
+        cancel_label_fs = d.cancel_label_fs * s,
         countdown_fs = d.countdown_fs * s,
         role_fs = d.role_fs * s,
         hint_fs = d.hint_fs * s,
         distance_fs = d.distance_fs * s,
+        gap_label_fs = d.gap_label_fs * s,
         event_fs = d.event_fs * s,
         tier_sz = d.tier_size * s,
         name_car_gap = d.name_car_gap * s,
         text_avatar_gap = d.text_avatar_gap * s,
         result_avatar_sz = d.result_avatar_size * s,
         result_name_fs = d.result_name_fs * s,
+        result_headline_fs = d.result_headline_fs * s,
         result_score_fs = d.result_score_fs * s,
         draw_label_fs = d.draw_label_fs * s,
         draw_score_fs = d.draw_score_fs * s,

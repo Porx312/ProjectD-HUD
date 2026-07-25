@@ -411,7 +411,7 @@ local function center_text_for(state_name, status_name, arming_countdown, local_
         return terminal_display_text(raw, state_name, status_name, last_event, local_steam_id)
     end
     if looking then return "LOOKING" end
-    if state_name == "pairing" then return "PAIRING" end
+    if state_name == "pairing" then return "" end
     if state_name == "arming" then
         local n = tonumber(arming_countdown)
         if n ~= nil and n > 0 then return tostring(math.floor(n)) end
@@ -674,7 +674,7 @@ function battle_parse.to_ui(raw, local_steam_id)
         final_score_text = final_score ~= "" and final_score or nil,
         show_gap = (is_active or is_armed) and not looking,
         show_scores = is_active,
-        show_prep_scores = state_name == "pairing" and not looking,
+        show_prep_scores = state_name == "armed" and not looking,
         gap = gap,
         gap3d_m = gap.current,
         disappear_gap_m = gap.max,

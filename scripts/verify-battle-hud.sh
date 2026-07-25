@@ -2,7 +2,7 @@
 # Quick smoke test for unified HUD SSE stream (run on VPS or with API access).
 set -euo pipefail
 
-API_BASE="${API_BASE:-http://13.140.160.131:3000}"
+API_BASE="${API_BASE:-http://176.57.150.251:3000}"
 STEAM_ID="${1:-}"
 API_KEY="${API_KEY:-}"
 CAR_MODEL="${CAR_MODEL:-}"

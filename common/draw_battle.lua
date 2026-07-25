@@ -90,10 +90,14 @@ local function should_show_searching(battle)
     return true
 end
 
-local function should_show_center_scores(battle, phase_state, is_terminal)
+local function should_show_center_scores(battle, phase_state, is_terminal, center_key)
     if is_terminal then return false end
+    -- Pairing: solo etiqueta de fase (PAIRING); los scores van en active/armed con su PNG.
+    if phase_state == "pairing" then return false end
     if battle.show_scores == true then return true end
-    if battle.show_prep_scores == true then return true end
+    if battle.show_prep_scores == true and (center_key == "vs" or center_key == "points") then
+        return true
+    end
     if phase_state == "active" then return true end
     return false
 end
@@ -286,6 +290,14 @@ local function live_event_differs_from_center(event_label, center_text)
     return true
 end
 
+local function should_draw_phase_label(phase_state, center_key)
+    -- pairing: estado interno del server; solo avatares/nombres, sin etiqueta central.
+    if phase_state == "pairing" and center_key ~= "matchmaking" then
+        return false
+    end
+    return true
+end
+
 local function draw_phase_label_box(panel_o, panel_size, text, fs, pt, m)
     if text == nil or text == "" then return end
     theme.ensure_fonts()
@@ -329,8 +341,13 @@ local function phase_label_fs(phase_state, is_terminal, center_text, m, panel_si
     return m.mode_fs
 end
 
-local function battle_center_image_key(battle, phase_state, is_terminal)
-    if is_terminal then return nil end
+local function battle_center_image_key(battle, phase_state, is_terminal, is_draw)
+    if is_terminal then
+        if is_draw then return "draw" end
+        if phase_state == "finished" then return "result" end
+        if phase_state == "cancelled" then return "cancelled" end
+        return nil
+    end
     if battle.is_lobby == true or battle.looking_for_opponent == true then
         return "matchmaking"
     end
@@ -354,21 +371,22 @@ local function uses_center_points_layout(center_key, center_image_drawn)
     return center_key == "points" and center_image_drawn == true
 end
 
-local function draw_center_points_event(panel_o, panel_size, event_label, center_text, m, d)
+local function draw_center_points_event(panel_o, panel_size, event_label, center_text, m, d, content_o, content_sz)
     if event_label == "" then return end
     if not live_event_differs_from_center(event_label, center_text) then return end
-    local pt = layout.battle_center_point(panel_o, panel_size, d.center_points_event)
+    local pt = layout.battle_center_point(panel_o, panel_size, d.center_points_event, content_o, content_sz)
     local fs = math.max(m.event_fs, panel_size.y * 0.10)
     draw_text_centered(event_label, fs, pt, theme.colors.white, theme.fonts.bold)
 end
 
 local function battle_center_image_layer(panel_o, panel_size, center_key)
-    if center_key == nil or center_key == "" then return false end
+    if center_key == nil or center_key == "" then return false, nil, nil end
     local tex = images.get_battle_center(center_key)
-    if tex == nil then return false end
-    local o, sz = layout.battle_center_rect(panel_o, panel_size, center_key)
-    ui.drawImage(tex, o, o + sz, rgbm(1, 1, 1, 1))
-    return true
+    if tex == nil then return false, nil, nil end
+    local slot_o, slot_sz = layout.battle_center_rect(panel_o, panel_size, center_key)
+    local draw_o, draw_sz = images.contain_rect(slot_o, slot_sz, tex)
+    ui.drawImage(tex, draw_o, draw_o + draw_sz, rgbm(1, 1, 1, 1))
+    return true, draw_o, draw_sz
 end
 
 local function countdown_overlay_label(battle, phase_state)
@@ -385,10 +403,70 @@ local function countdown_overlay_label(battle, phase_state)
     return ""
 end
 
-local function battle_center_text_block(panel_o, panel_size, battle, m, d, phase_state, is_terminal, is_draw, center_key, center_image_drawn)
+local function clamp_result_fs(base_fs, panel_h, min_frac, max_frac)
+    local min_fs = math.max(11, panel_h * min_frac)
+    local max_fs = math.max(min_fs + 1, panel_h * max_frac)
+    return math.min(math.max(base_fs, min_fs), max_fs)
+end
+
+local function draw_finished_result_center(panel_o, panel_size, battle, m, d, content_o, content_sz)
+    local winner = battle_parse.resolve_winner_display(battle)
+    if winner == "" then winner = "WINNER" end
+    winner = theme.format_display_name(winner)
+
+    local score_text = tostring(
+        battle.final_score_text
+            or string.format("%d-%d", tonumber(battle.score_left) or 0, tonumber(battle.score_right) or 0)
+    )
+
+    local headline_pt = layout.battle_center_point(panel_o, panel_size, d.center_result_headline, content_o, content_sz)
+    local score_pt = layout.battle_center_point(panel_o, panel_size, d.center_result_score, content_o, content_sz)
+
+    local headline_fs = clamp_result_fs(m.result_headline_fs, panel_size.y, 0.16, 0.24)
+    local score_fs = clamp_result_fs(m.result_score_fs, panel_size.y, 0.14, 0.22)
+
+    draw_text_centered("WIN " .. winner, headline_fs, headline_pt, theme.colors.battle_vs, theme.fonts.bold)
+    draw_text_centered(score_text, score_fs, score_pt, theme.colors.white, theme.fonts.bold)
+end
+
+local function battle_center_text_block(panel_o, panel_size, battle, m, d, phase_state, is_terminal, is_draw, center_key, center_image_drawn, center_content_o, center_content_sz)
     local center_text = tostring(battle.center_text or battle.mode or "")
     if center_text == "" and not is_terminal then
         center_text = string.upper(phase_state)
+    end
+
+    if is_terminal and phase_state == "finished" then
+        draw_finished_result_center(panel_o, panel_size, battle, m, d, center_content_o, center_content_sz)
+        return
+    end
+
+    if is_terminal and is_draw then
+        local label_pt = layout.battle_center_point(panel_o, panel_size, d.center_draw_label, center_content_o, center_content_sz)
+        local score_pt = layout.battle_center_point(panel_o, panel_size, d.center_draw_score, center_content_o, center_content_sz)
+        local label_fs = clamp_result_fs(m.draw_label_fs, panel_size.y, 0.22, 0.32)
+        local score_fs = clamp_result_fs(m.draw_score_fs, panel_size.y, 0.14, 0.22)
+        draw_text_centered("DRAW", label_fs, label_pt, theme.colors.white, theme.fonts.bold)
+        draw_text_centered(
+            string.format("%d-%d", tonumber(battle.score_left) or 0, tonumber(battle.score_right) or 0),
+            score_fs,
+            score_pt,
+            theme.colors.white,
+            theme.fonts.bold
+        )
+        return
+    end
+
+    if is_terminal and phase_state == "cancelled" then
+        local event_label = tostring(battle.event_label or "")
+        if event_label == "" and battle.end_label ~= nil then
+            event_label = tostring(battle.end_label)
+        end
+        local msg = event_label ~= "" and event_label or center_text
+        if msg == "" then msg = "CANCELLED" end
+        local pt = layout.battle_center_point(panel_o, panel_size, d.center_phase_label)
+        local fs = clamp_result_fs(m.cancel_label_fs, panel_size.y, 0.22, 0.36)
+        draw_text_centered(msg, fs, pt, theme.colors.accent, theme.fonts.bold)
+        return
     end
 
     if not is_terminal and phase_state ~= "active" then
@@ -410,14 +488,17 @@ local function battle_center_text_block(panel_o, panel_size, battle, m, d, phase
             end
         elseif center_key == "matchmaking" then
             if center_image_drawn ~= true then
-                local pt = layout.battle_center_point(panel_o, panel_size, d.center_countdown)
+                local pt = layout.battle_center_point(panel_o, panel_size, d.center_phase_label)
                 local label = center_text ~= "" and center_text or "LOOKING"
                 draw_phase_label_box(panel_o, panel_size, label, m.mode_fs, pt, m)
             end
         else
-            local pt = layout.battle_center_point(panel_o, panel_size, d.center_countdown)
-            local fs = phase_label_fs(phase_state, false, center_text, m, panel_size)
-            draw_phase_label_box(panel_o, panel_size, center_text, fs, pt, m)
+            if should_draw_phase_label(phase_state, center_key) then
+                local label = center_text ~= "" and center_text or string.upper(phase_state)
+                local pt = layout.battle_center_point(panel_o, panel_size, d.center_phase_label)
+                local fs = phase_label_fs(phase_state, false, label, m, panel_size)
+                draw_phase_label_box(panel_o, panel_size, label, fs, pt, m)
+            end
 
             local hint = tostring(battle.countdown_hint or "")
             if hint ~= "" and (phase_state == "arming" or phase_state == "armed") then
@@ -428,11 +509,13 @@ local function battle_center_text_block(panel_o, panel_size, battle, m, d, phase
     end
 
     local points_layout = uses_center_points_layout(center_key, center_image_drawn)
+    local points_content_o = points_layout and center_content_o or nil
+    local points_content_sz = points_layout and center_content_sz or nil
 
-    if should_show_center_scores(battle, phase_state, is_terminal) then
+    if should_show_center_scores(battle, phase_state, is_terminal, center_key) then
         if points_layout then
-            local sl = layout.battle_center_point(panel_o, panel_size, d.center_points_score_left)
-            local sr = layout.battle_center_point(panel_o, panel_size, d.center_points_score_right)
+            local sl = layout.battle_center_point(panel_o, panel_size, d.center_points_score_left, points_content_o, points_content_sz)
+            local sr = layout.battle_center_point(panel_o, panel_size, d.center_points_score_right, points_content_o, points_content_sz)
             draw_text_centered(tostring(battle.score_left or 0), m.score_fs, sl, theme.colors.white, theme.fonts.bold)
             draw_text_centered(tostring(battle.score_right or 0), m.score_fs, sr, theme.colors.white, theme.fonts.bold)
         else
@@ -451,7 +534,7 @@ local function battle_center_text_block(panel_o, panel_size, battle, m, d, phase
             local role_pt = points_layout
                 and d.center_points_role
                 or d.center_role
-            local rpt = layout.battle_center_point(panel_o, panel_size, role_pt)
+            local rpt = layout.battle_center_point(panel_o, panel_size, role_pt, points_content_o, points_content_sz)
             draw_text_centered(role, m.role_fs, rpt, theme.colors.white, theme.fonts.bold)
         end
     end
@@ -462,44 +545,9 @@ local function battle_center_text_block(panel_o, panel_size, battle, m, d, phase
     end
 
     if points_layout then
-        draw_center_points_event(panel_o, panel_size, event_label, center_text, m, d)
+        draw_center_points_event(panel_o, panel_size, event_label, center_text, m, d, points_content_o, points_content_sz)
     else
         draw_top_event_banner(panel_o, panel_size, event_label, center_text, m, d, phase_state, is_terminal)
-    end
-
-    if is_terminal and is_draw then
-        local label_pt = layout.battle_center_point(panel_o, panel_size, d.center_draw_label)
-        local score_pt = layout.battle_center_point(panel_o, panel_size, d.center_draw_score)
-        draw_text_centered("DRAW", math.max(m.draw_label_fs, panel_size.y * 0.6), label_pt, theme.colors.white, theme.fonts.bold)
-        draw_text_centered(
-            string.format("%d-%d", tonumber(battle.score_left) or 0, tonumber(battle.score_right) or 0),
-            math.max(m.draw_score_fs, panel_size.y * 0.36),
-            score_pt,
-            theme.colors.white,
-            theme.fonts.bold
-        )
-        return
-    end
-
-    if is_terminal and phase_state == "finished" then
-        local winner = battle_parse.resolve_winner_display(battle)
-        if winner == "" then winner = "WINNER" end
-        local label_pt = layout.battle_center_point(panel_o, panel_size, d.center_draw_label)
-        local score_pt = layout.battle_center_point(panel_o, panel_size, d.center_draw_score)
-        draw_text_centered(winner, math.max(m.result_name_fs, panel_size.y * 0.36), label_pt, theme.colors.white, theme.fonts.bold)
-        draw_text_centered(
-            tostring(battle.final_score_text or string.format("%d-%d", tonumber(battle.score_left) or 0, tonumber(battle.score_right) or 0)),
-            math.max(m.result_score_fs, panel_size.y * 0.30),
-            score_pt,
-            theme.colors.white,
-            theme.fonts.bold
-        )
-        return
-    elseif is_terminal and phase_state == "cancelled" then
-        local msg = event_label ~= "" and event_label or center_text
-        if msg == "" then msg = "CANCELLED" end
-        local pt = layout.battle_center_point(panel_o, panel_size, d.center_draw_label)
-        draw_text_centered(msg, math.max(m.event_fs * 2, panel_size.y * 0.32), pt, theme.colors.accent, theme.fonts.bold)
     end
 end
 
@@ -509,6 +557,11 @@ local function battle_searching_layer(panel_o, panel_size, show)
     if tex == nil then return end
     local origin, size = layout.battle_searching_rect(panel_o, panel_size)
     ui.drawImage(tex, origin, origin + size, rgbm(1, 1, 1, 1))
+end
+
+local function draw_rect_bar(tl, size, color)
+    if size.x <= 0 or size.y <= 0 then return end
+    ui.drawRectFilled(tl, tl + size, color)
 end
 
 local function draw_pill_bar(tl, size, color)
@@ -538,13 +591,14 @@ end
 local function draw_gap_label(text, fs, point)
     theme.ensure_fonts()
     local font = theme.fonts.bold
-    local shadow = rgbm(0, 0, 0, 0.72)
-    local offset = math.max(1, fs * 0.04)
+    local shadow = rgbm(0, 0, 0, 0.88)
+    local offset = math.max(1, fs * 0.07)
     draw_text_centered(text, fs, point + vec2(offset, offset), shadow, font)
-    draw_text_centered(text, fs, point, theme.colors.white, font)
+    draw_text_centered(text, fs, point + vec2(-offset * 0.6, offset * 0.6), shadow, font)
+    draw_text_centered(text, fs, point, rgbm(1, 1, 1, 1), font)
 end
 
-local function battle_gap_layer(bar_origin, bar_size, gap_margin, gap_h, battle, m)
+local function battle_gap_layer(bar_origin, bar_size, gap_margin, gap_h, battle, m, win_origin, win_size)
     if battle.show_gap ~= true or gap_h <= 0 then return end
 
     local gap = battle.gap or {}
@@ -552,9 +606,9 @@ local function battle_gap_layer(bar_origin, bar_size, gap_margin, gap_h, battle,
     local gap_max = math.max(1, tonumber(gap.max or battle.disappear_gap_m) or 250)
     local gap_ratio = math.min(1, gap_current / gap_max)
 
-    local origin, size = layout.battle_gap_rect(bar_origin, bar_size, gap_margin, gap_h)
+    local origin, size = layout.battle_gap_rect(bar_origin, bar_size, gap_margin, gap_h, win_origin, win_size)
     local d = m.design or layout.BATTLE_DESIGN
-    local pad = math.max(1, (tonumber(d.gap_bar_pad) or 2) * m.scale)
+    local pad = math.max(0, (tonumber(d.gap_bar_pad) or 0) * m.scale)
 
     local bar_asset = images.get_battle_gap_bar()
     local track = images.get_battle_gap_track()
@@ -568,7 +622,7 @@ local function battle_gap_layer(bar_origin, bar_size, gap_margin, gap_h, battle,
             if fill_tex ~= nil then
                 ui.drawImage(fill_tex, origin, origin + size, rgbm(1, 1, 1, 1))
             else
-                draw_pill_bar(
+                draw_rect_bar(
                     origin + vec2(pad, pad),
                     vec2(size.x - pad * 2, size.y - pad * 2),
                     gap_fill_color(gap_ratio)
@@ -584,7 +638,7 @@ local function battle_gap_layer(bar_origin, bar_size, gap_margin, gap_h, battle,
         elseif gap_ratio > 0 then
             local fill_w = math.max(4, size.x * gap_ratio)
             ui.pushClipRect(origin, origin + vec2(fill_w, size.y))
-            draw_pill_bar(
+            draw_rect_bar(
                 origin + vec2(pad, pad),
                 vec2(size.x - pad * 2, size.y - pad * 2),
                 gap_fill_color(gap_ratio)
@@ -592,18 +646,18 @@ local function battle_gap_layer(bar_origin, bar_size, gap_margin, gap_h, battle,
             ui.popClipRect()
         end
     else
-        draw_pill_bar(origin, size, theme.colors.battle_gap_track)
+        draw_rect_bar(origin, size, theme.colors.battle_gap_track)
         if gap_ratio > 0 then
             local inner = vec2(size.x - pad * 2, size.y - pad * 2)
             local fill_w = math.max(2, inner.x * gap_ratio)
             ui.pushClipRect(origin, origin + vec2(pad + fill_w + pad, size.y))
-            draw_pill_bar(origin + vec2(pad, pad), inner, gap_fill_color(gap_ratio))
+            draw_rect_bar(origin + vec2(pad, pad), vec2(fill_w, inner.y), gap_fill_color(gap_ratio))
             ui.popClipRect()
         end
     end
 
     local label = string.format("%dm / %dm", math.floor(gap_current + 0.5), math.floor(gap_max + 0.5))
-    local label_fs = math.max(m.distance_fs, size.y * 0.42)
+    local label_fs = math.max(m.gap_label_fs or 0, m.distance_fs * 1.4, size.y * 0.62, 13)
     draw_gap_label(label, label_fs, vec2(origin.x + size.x * 0.5, origin.y + size.y * 0.5))
 end
 
@@ -624,15 +678,28 @@ function draw_battle.battle_block(panel_o, panel_size, battle, opts)
     local right = battle.player_right or battle_placeholder()
     local right_placeholder = right.placeholder == true
 
-    local center_key = battle_center_image_key(battle, phase_state, is_terminal)
-    local center_image_drawn = battle_center_image_layer(panel_o, panel_size, center_key)
+    local center_key = battle_center_image_key(battle, phase_state, is_terminal, is_draw)
+    local center_image_drawn, center_content_o, center_content_sz = battle_center_image_layer(panel_o, panel_size, center_key)
 
     battle_player_layer(panel_o, panel_size, left, "left", m, d)
     if not right_placeholder then
         battle_player_layer(panel_o, panel_size, right, "right", m, d)
     end
 
-    battle_center_text_block(panel_o, panel_size, battle, m, d, phase_state, is_terminal, is_draw, center_key, center_image_drawn)
+    battle_center_text_block(
+        panel_o,
+        panel_size,
+        battle,
+        m,
+        d,
+        phase_state,
+        is_terminal,
+        is_draw,
+        center_key,
+        center_image_drawn,
+        center_content_o,
+        center_content_sz
+    )
     battle_searching_layer(panel_o, panel_size, should_show_searching(battle))
     battle_gap_layer(
         panel_o,
@@ -640,7 +707,9 @@ function draw_battle.battle_block(panel_o, panel_size, battle, opts)
         tonumber(opts.gap_margin) or 0,
         tonumber(opts.gap_h) or 0,
         battle,
-        m
+        m,
+        opts.win_origin,
+        opts.win_size
     )
 end
 

@@ -408,16 +408,23 @@ function draw.profile_block(win_origin, win_size, entry, extra)
     draw.profile_card(panel_o, ps, entry, opts)
 end
 
-local draw_battle = require("common.draw_battle")
+local draw_battle_mod
+
+local function draw_battle()
+    if draw_battle_mod == nil then
+        draw_battle_mod = require("common.draw_battle")
+    end
+    return draw_battle_mod
+end
 
 --- Fondo battle escalado (bg.png) sobre el rect de la barra.
 function draw.battle_panel(bar_origin, bar_size)
-    return draw_battle.battle_panel(bar_origin, bar_size)
+    return draw_battle().battle_panel(bar_origin, bar_size)
 end
 
 --- Capas battle sobre la barra; gap debajo si opts.gap_h > 0.
 function draw.battle_block(panel_o, panel_size, battle, opts)
-    draw_battle.battle_block(panel_o, panel_size, battle, opts)
+    draw_battle().battle_block(panel_o, panel_size, battle, opts)
 end
 
 return draw

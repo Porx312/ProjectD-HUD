@@ -24,6 +24,9 @@ function mod.update() end
 
 function mod.main(dt)
     theme.ensure_fonts()
+    if data.tick ~= nil then
+        data.tick("global")
+    end
     local win = ui.windowSize()
 
     draw.card_panel(vec2(0, 0), win)

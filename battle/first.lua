@@ -72,6 +72,8 @@ function mod.main(dt)
     draw.battle_block(bar_o, bar_ps, battle, {
         gap_margin = gap_margin,
         gap_h = gap_h,
+        win_origin = win_origin,
+        win_size = win_size,
     })
 end
 

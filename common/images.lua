@@ -206,6 +206,33 @@ function images.cover_uv(tex)
     return vec2(0, 0), vec2(1, 1)
 end
 
+--- Rect contain-fit: escala la textura dentro del slot preservando aspect ratio.
+function images.contain_rect(slot_o, slot_sz, tex)
+    if slot_o == nil or slot_sz == nil then
+        return slot_o, slot_sz
+    end
+    local ok, img_sz = pcall(ui.imageSize, tex)
+    if not ok or img_sz == nil or img_sz.x <= 0 or img_sz.y <= 0 then
+        return slot_o, slot_sz
+    end
+
+    local slot_aspect = slot_sz.x / slot_sz.y
+    local img_aspect = img_sz.x / img_sz.y
+    local draw_w, draw_h
+
+    if img_aspect > slot_aspect then
+        draw_w = slot_sz.x
+        draw_h = slot_sz.x / img_aspect
+    else
+        draw_h = slot_sz.y
+        draw_w = slot_sz.y * img_aspect
+    end
+
+    local ox = slot_o.x + (slot_sz.x - draw_w) * 0.5
+    local oy = slot_o.y + (slot_sz.y - draw_h) * 0.5
+    return vec2(ox, oy), vec2(draw_w, draw_h)
+end
+
 function images.corners_all()
     return corners_all()
 end
