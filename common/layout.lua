@@ -3,10 +3,13 @@
 local layout = {}
 
 layout.PAD_COMPETITION = 4
-layout.COMPETITION_PAD = 6
+layout.COMPETITION_PAD = 5
 layout.COMPETITION_ROW_COUNT = 3
-layout.COMPETITION_CENTER_SCALE = 1.0
-layout.COMPETITION_ROW_SCALE = 1.0
+layout.COMPETITION_CENTER_SCALE = 1.12
+layout.COMPETITION_BLOCK_RATIO = 0.97
+layout.COMPETITION_CLIP_INSET = { top = 7, bottom = 7, left = 6, right = 6 }
+layout.COMPETITION_FLIP_SEC = 0.9
+layout.COMPETITION_FLIP_SEC_RIVAL = 0.55
 layout.ROW_H = 40
 layout.CARD_EDGE_PAD = 4
 layout.AVATAR_Y_EXTRA = 2
@@ -464,58 +467,83 @@ function layout.corners_all()
     return 15
 end
 
---- Métricas Competition: 3 filas iguales, centradas, sin interacción (permite arrastrar el HUD).
+--- Métricas Competition: 3 filas compactas, clip al contenedor del overlay.
 function layout.competition_content(panel_size)
     local pad = layout.COMPETITION_PAD
     local rows = layout.COMPETITION_ROW_COUNT
-    local list_h = math.max(1, panel_size.y)
-    local row_gap = math.max(6, math.floor(panel_size.y * 0.028))
-    local total_gap = row_gap * (rows - 1)
-    local row_h = (list_h - total_gap) / rows
-    local block_h = row_h * rows + total_gap
-    local list_top = math.max(0, (panel_size.y - block_h) * 0.5)
-    local content_width = panel_size.x - pad * 2
+    local center_scale = layout.COMPETITION_CENTER_SCALE or 1.0
+    local clip = layout.COMPETITION_CLIP_INSET or { top = 12, bottom = 12, left = 8, right = 8 }
+    local clip_h = math.max(1, panel_size.y - clip.top - clip.bottom)
+    local block_max_h = clip_h * (layout.COMPETITION_BLOCK_RATIO or 0.97)
+    local row_gap = math.max(4, math.floor(clip_h * 0.018))
 
-    local rh = row_h / 40
-    local name_fs = math.min(12, math.max(9, math.floor(10.5 * rh)))
-    local row = {
-        row_height = row_h,
-        rank_col_width = math.max(15, math.floor(17 * rh)),
-        content_width = content_width,
-        avatar_size = math.max(14, math.floor(row_h * 0.68)),
-        tier_size = math.max(11, math.floor(row_h * 0.44)),
-        name_fs = name_fs,
-        car_fs = math.max(8, name_fs - 1),
-        time_fs = math.max(8, math.floor(name_fs * 0.95)),
-        text_gap = math.max(2, math.floor(2.5 * rh)),
-        trailing_pad = 4,
-    }
+    local side_units = 2 + center_scale
+    local side_row_h = (block_max_h - row_gap * (rows - 1)) / side_units
+    local center_row_h = side_row_h * center_scale
+    local block_h = side_row_h * 2 + center_row_h + row_gap * (rows - 1)
+    local list_top = clip.top + math.max(0, (clip_h - block_h) * 0.5)
+    local content_width = panel_size.x - pad * 2 - clip.left - clip.right
+
+    local function row_metrics(row_h)
+        local rh = row_h / 32
+        local name_fs = math.min(14, math.max(10, math.floor(11.5 * rh)))
+        return {
+            row_height = row_h,
+            rank_col_width = math.max(16, math.floor(17 * rh)),
+            content_width = content_width,
+            avatar_size = math.max(14, math.floor(row_h * 0.62)),
+            tier_size = math.max(12, math.floor(row_h * 0.42)),
+            name_fs = name_fs,
+            car_fs = math.max(9, name_fs - 1),
+            time_fs = math.min(14, math.max(10, math.floor(name_fs * 1.1))),
+            text_gap = math.max(3, math.floor(3 * rh)),
+            text_line_gap = math.max(1, math.floor(rh * 0.85)),
+            trailing_pad = 4,
+        }
+    end
+
+    local side_row = row_metrics(side_row_h)
+    local center_row = row_metrics(center_row_h)
 
     return {
         pad = pad,
         list_top = list_top,
         block_h = block_h,
-        row_h = row_h,
-        side_row_h = row_h,
-        center_row_h = row_h,
+        row_h = side_row_h,
+        side_row_h = side_row_h,
+        center_row_h = center_row_h,
         row_heights = {
-            [0] = row_h,
-            [1] = row_h,
-            [2] = row_h,
+            [0] = side_row_h,
+            [1] = center_row_h,
+            [2] = side_row_h,
         },
         row_count = rows,
         content_width = content_width,
         row_gap = row_gap,
-        row = row,
-        side_row = row,
-        center_row = row,
-        name_fs = name_fs,
+        row_step = side_row_h + row_gap,
+        clip_inset = clip,
+        row = side_row,
+        side_row = side_row,
+        center_row = center_row,
+        name_fs = side_row.name_fs,
     }
 end
 
---- Opciones de dibujo por fila (todas iguales).
-function layout.competition_row_opts(content, _is_self)
+--- Y relativa a list_top para un slot (0=arriba, 1=centro, 2=abajo).
+function layout.competition_slot_y(content, slot_index)
+    local y = 0
+    for i = 0, slot_index - 1 do
+        y = y + (content.row_heights[i] or content.side_row_h) + (content.row_gap or 0)
+    end
+    return y
+end
+
+--- Opciones de dibujo por fila (centro usa métricas ampliadas).
+function layout.competition_row_opts(content, is_self)
     local src = content.row or content.side_row
+    if is_self and content.center_row ~= nil then
+        src = content.center_row
+    end
     return {
         row_height = src.row_height,
         rank_col_width = src.rank_col_width,
@@ -526,6 +554,7 @@ function layout.competition_row_opts(content, _is_self)
         car_fs = src.car_fs,
         time_fs = src.time_fs,
         text_gap = src.text_gap,
+        text_line_gap = src.text_line_gap or 1,
         trailing_pad = src.trailing_pad,
         no_input = true,
     }

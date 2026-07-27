@@ -28,7 +28,7 @@ local function create_state()
         version_poll_at = 0,
         version_poll_inflight = false,
 
-        TICK_INTERVAL_SEC = 0.25,
+        TICK_INTERVAL_SEC = 0.12,
 
         steam_override_storage = ac.storage("ProjectD-HUD:steam_id", ""),
         steam_cache_storage = ac.storage("ProjectD-HUD:steam_cache", ""),
@@ -47,6 +47,14 @@ local function create_state()
         battle_last_battle_id = "",
         battle_prep_cd1_since = 0,
         battle_last_arming_cd = nil,
+
+        --- Grouped battle runtime (arming anchor, last snapshot meta).
+        battle_runtime = {
+            arming_cd = nil,
+            arming_since = 0,
+            last_snapshot_version = "",
+            last_snapshot_state = "",
+        },
 
         battle_sse_connected = false,
         battle_sse_reconnect_at = 0,

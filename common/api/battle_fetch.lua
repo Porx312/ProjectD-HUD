@@ -20,6 +20,100 @@ function battle_fetch.debug(msg)
     battle_debug(msg)
 end
 
+local function ensure_battle_runtime()
+    if state.battle_runtime ~= nil then return end
+    state.battle_runtime = {
+        arming_cd = state.battle_last_arming_cd,
+        arming_since = state.battle_prep_cd1_since or 0,
+        last_snapshot_version = "",
+        last_snapshot_state = "",
+    }
+end
+
+local function reset_arming_countdown_anchor()
+    ensure_battle_runtime()
+    state.battle_last_arming_cd = nil
+    state.battle_prep_cd1_since = 0
+    if state.battle_runtime ~= nil then
+        state.battle_runtime.arming_cd = nil
+        state.battle_runtime.arming_since = 0
+    end
+end
+
+local function sync_arming_runtime(cd, since)
+    state.battle_last_arming_cd = cd
+    state.battle_prep_cd1_since = since
+    if state.battle_runtime ~= nil then
+        state.battle_runtime.arming_cd = cd
+        state.battle_runtime.arming_since = since
+    end
+end
+
+local function read_arming_cd()
+    if state.battle_runtime ~= nil and state.battle_runtime.arming_cd ~= nil then
+        return tonumber(state.battle_runtime.arming_cd)
+    end
+    return tonumber(state.battle_last_arming_cd)
+end
+
+local function read_arming_since()
+    if state.battle_runtime ~= nil and (state.battle_runtime.arming_since or 0) > 0 then
+        return state.battle_runtime.arming_since
+    end
+    return state.battle_prep_cd1_since or 0
+end
+
+--- Server SSE may arrive slower on some VPS; tick arming countdown locally between snapshots.
+local function sync_arming_countdown_anchor(ui, now)
+    now = now or os.clock()
+    if ui == nil or ui.state ~= "arming" then
+        reset_arming_countdown_anchor()
+        return
+    end
+
+    local cd = tonumber(ui.arming_countdown)
+    if cd == nil then return end
+
+    local prev = read_arming_cd()
+    if prev ~= cd or read_arming_since() <= 0 then
+        sync_arming_runtime(cd, now)
+        battle_debug("arming cd anchor " .. tostring(cd))
+    end
+end
+
+local function live_arming_countdown(now)
+    local base = read_arming_cd()
+    local since = read_arming_since()
+    if base == nil or since <= 0 then return nil end
+    local elapsed = math.max(0, (now or os.clock()) - since)
+    return math.max(0, math.floor(base - elapsed + 0.0001))
+end
+
+local function apply_live_arming_countdown(ui, now)
+    if ui == nil or ui.state ~= "arming" then return ui end
+
+    now = now or os.clock()
+    local live = live_arming_countdown(now)
+    if live == nil then return ui end
+
+    local server_cd = tonumber(ui.arming_countdown)
+    if server_cd ~= nil then
+        live = math.min(live, math.max(0, math.floor(server_cd + 0.0001)))
+    end
+
+    local center = live > 0 and tostring(live) or "READY"
+    if live == server_cd and center == tostring(ui.center_text or ui.mode or "") then
+        return ui
+    end
+
+    local copy = battle_parse.deep_copy_ui(ui)
+    if copy == nil then return ui end
+    copy.arming_countdown = live
+    copy.center_text = center
+    copy.mode = center
+    return battle_parse.attach_display(copy)
+end
+
 local function latch_active(now)
     now = now or os.clock()
     return now < (state.battle_result_hold_until or 0)
@@ -100,10 +194,12 @@ local function reset_battle_session()
     state.battle_event_shown_at = 0
     state.battle_finish_latch_snapshot = nil
     state.battle_result_hold_until = 0
+    reset_arming_countdown_anchor()
 end
 
 function battle_fetch.apply_snapshot(raw, local_steam_id, now)
     now = now or os.clock()
+    ensure_battle_runtime()
     if raw == nil then
         clear_idle_battle_state(now)
         return
@@ -163,6 +259,10 @@ function battle_fetch.apply_snapshot(raw, local_steam_id, now)
 
     state.battle_last_snapshot_at = now
     state.battle_last_error = nil
+    if state.battle_runtime ~= nil then
+        state.battle_runtime.last_snapshot_version = util.safe_str(raw.version)
+        state.battle_runtime.last_snapshot_state = util.safe_str(ui.state)
+    end
 
     local new_event_ts = tonumber(ui.event_ts) or 0
     local score_changed = prev_ui == nil
@@ -196,11 +296,16 @@ function battle_fetch.apply_snapshot(raw, local_steam_id, now)
     else
         state.battle_snapshot_raw = raw
         state.battle_ui = ui
+        sync_arming_countdown_anchor(ui, now)
     end
 
     battle_debug(string.format(
-        "apply_snapshot ok v=%s state=%s scores=%d-%d",
-        util.safe_str(raw.version), ui.state, ui.score_left or 0, ui.score_right or 0
+        "apply_snapshot ok v=%s state=%s cd=%s scores=%d-%d",
+        util.safe_str(raw.version),
+        ui.state,
+        tostring(ui.arming_countdown or "-"),
+        ui.score_left or 0,
+        ui.score_right or 0
     ))
 end
 
@@ -224,6 +329,7 @@ local function with_toast_timeout(ui, now)
         return ui
     end
     now = now or os.clock()
+    ui = apply_live_arming_countdown(ui, now)
     local toast_sec = config.BATTLE_EVENT_TOAST_SEC or 2
     if ui.event_label ~= nil and ui.event_label ~= "" then
         local shown_at = state.battle_event_shown_at or 0
@@ -231,8 +337,8 @@ local function with_toast_timeout(ui, now)
             local copy = battle_parse.deep_copy_ui(ui)
             if copy ~= nil then
                 copy.event_label = ""
+                return battle_parse.attach_display(copy)
             end
-            return copy
         end
     end
     return ui
@@ -287,6 +393,11 @@ function battle_fetch.reset()
     state.battle_last_event_ts = 0
     state.battle_event_shown_at = 0
     state.battle_last_snapshot_at = 0
+    if state.battle_runtime ~= nil then
+        state.battle_runtime.last_snapshot_version = ""
+        state.battle_runtime.last_snapshot_state = ""
+    end
+    reset_arming_countdown_anchor()
 end
 
 return battle_fetch

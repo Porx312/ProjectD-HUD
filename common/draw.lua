@@ -4,6 +4,7 @@ local theme = require("common.theme")
 local images = require("common.images")
 local layout = require("common.layout")
 local profile = require("common.api.profile")
+local draw_text = require("common.draw_text")
 
 local draw = {}
 
@@ -13,17 +14,11 @@ local TIER_ROW = 20
 local RANK_COL = 22
 
 local function measure_text(font, text, size)
-    ui.pushDWriteFont(font)
-    local w = ui.measureDWriteText(text, size).x
-    ui.popDWriteFont()
-    return w
+    return draw_text.measure(font, text, size)
 end
 
 local function measure_dwrite(font, text, size)
-    ui.pushDWriteFont(font)
-    local sz = ui.measureDWriteText(text, size)
-    ui.popDWriteFont()
-    return sz
+    return draw_text.measure_size(font, text, size)
 end
 
 function draw.flat_panel(origin, size)
@@ -237,7 +232,7 @@ local function truncate_text(text, font, fs, max_w)
     return suffix, fs
 end
 
---- Fila competition: posición · foto · nombre · coche · tiempo · tier (una línea).
+--- Fila competition: posición · foto · nombre/coche apilados · tiempo · tier.
 function draw.competition_row(origin, entry, opts)
     theme.ensure_fonts()
     opts = opts or {}
@@ -251,7 +246,9 @@ function draw.competition_row(origin, entry, opts)
     local car_fs = opts.car_fs or name_fs
     local time_fs = opts.time_fs or name_fs
     local gap = opts.text_gap or 3
+    local line_gap = opts.text_line_gap or 1
     local trailing_pad = opts.trailing_pad or 4
+    local row_alpha = opts.alpha or 1
     local row_size = vec2(content_w, row_h)
 
     if opts.no_input ~= true then
@@ -259,24 +256,40 @@ function draw.competition_row(origin, entry, opts)
         ui.invisibleButton(row_id, row_size)
         local hovered = ui.itemHovered()
         if hovered then
-            ui.drawRectFilled(origin, origin + row_size, rgbm(1, 1, 1, 0.06), 4, layout.corners_all())
+            ui.drawRectFilled(origin, origin + row_size, rgbm(1, 1, 1, 0.06 * row_alpha), 4, layout.corners_all())
         end
     end
 
     local is_self = entry.is_self == true
-    if is_self and opts.no_input ~= true then
-        ui.drawRectFilled(origin, origin + row_size, rgbm(1, 1, 1, 0.04), 4, layout.corners_all())
+
+    local border_style = opts.border_style or "gray"
+    local fill_col, border_col
+    if border_style == "up" then
+        fill_col = theme.colors.competition_rank_up_fill
+        border_col = theme.colors.competition_rank_up
+    elseif border_style == "down" then
+        fill_col = theme.colors.competition_rank_down_fill
+        border_col = theme.colors.competition_rank_down
+    else
+        fill_col = theme.colors.competition_row_fill
+        border_col = theme.colors.competition_row_border
     end
 
+    ui.drawRectFilled(origin, origin + row_size, rgbm(fill_col.r, fill_col.g, fill_col.b, fill_col.mult * row_alpha), 4, layout.corners_all())
+    ui.drawRect(origin, origin + row_size, rgbm(border_col.r, border_col.g, border_col.b, border_col.mult * row_alpha), 4, layout.corners_all(), 1)
+
+    local dim = opts.dimmed == true and 0.82 or 1.0
+    local text_alpha = row_alpha * dim
     local rank_color = theme.colors.white
     if entry.rank == 1 then rank_color = theme.colors.accent end
+    rank_color = rgbm(rank_color.r, rank_color.g, rank_color.b, rank_color.mult * text_alpha)
 
     local cy = origin.y + row_h * 0.5
     local tier_x = origin.x + content_w - trailing_pad - tier_sz
     local time_str = theme.format_lap(entry.lap_ms or entry.best_lap_ms)
 
-    ui.pushDWriteFont(theme.fonts.medium)
-    local time_w = measure_text(theme.fonts.medium, time_str, time_fs)
+    ui.pushDWriteFont(theme.fonts.bold)
+    local time_w = measure_text(theme.fonts.bold, time_str, time_fs)
     ui.popDWriteFont()
 
     local time_x = tier_x - gap - time_w
@@ -305,24 +318,96 @@ function draw.competition_row(origin, entry, opts)
     local car_text = theme.format_car_label(entry.car_name, entry.car_id)
 
     ui.pushDWriteFont(theme.fonts.bold)
-    name_text, name_fs = truncate_text(name_text, theme.fonts.bold, name_fs, flex_w * 0.46)
-    local name_w = measure_text(theme.fonts.bold, name_text, name_fs)
-    ui.dwriteDrawText(name_text, name_fs, vec2(x, cy - name_fs * 0.5), theme.colors.white)
-    ui.popDWriteFont()
-    x = x + name_w + gap
-
-    ui.pushDWriteFont(theme.fonts.medium)
-    car_text, car_fs = truncate_text(car_text, theme.fonts.medium, car_fs, math.max(0, text_right - x))
-    if x < text_right then
-        ui.dwriteDrawText(car_text, car_fs, vec2(x, cy - car_fs * 0.5), theme.colors.muted)
-    end
+    name_text, name_fs = truncate_text(name_text, theme.fonts.bold, name_fs, flex_w)
     ui.popDWriteFont()
 
     ui.pushDWriteFont(theme.fonts.medium)
-    ui.dwriteDrawText(time_str, time_fs, vec2(time_x, cy - time_fs * 0.5), theme.colors.accent)
+    car_text, car_fs = truncate_text(car_text, theme.fonts.medium, car_fs, flex_w)
+    ui.popDWriteFont()
+
+    local text_block_h = name_fs + line_gap + car_fs
+    local text_top = cy - text_block_h * 0.5
+
+    ui.pushDWriteFont(theme.fonts.bold)
+    ui.dwriteDrawText(name_text, name_fs, vec2(x, text_top), rgbm(1, 1, 1, text_alpha))
+    ui.popDWriteFont()
+
+    ui.pushDWriteFont(theme.fonts.medium)
+    ui.dwriteDrawText(car_text, car_fs, vec2(x, text_top + name_fs + line_gap), rgbm(0.55, 0.55, 0.58, text_alpha))
+    ui.popDWriteFont()
+
+    ui.pushDWriteFont(theme.fonts.bold)
+    ui.dwriteDrawText(time_str, time_fs, vec2(time_x, cy - time_fs * 0.5), rgbm(0.35, 0.78, 1.0, text_alpha))
     ui.popDWriteFont()
 
     draw.tier_badge(vec2(tier_x, cy - tier_sz * 0.5), profile.tier_for_display(entry), tier_sz)
+
+    if opts.draw_separator == true then
+        local sep_y = origin.y + row_h
+        ui.drawLine(
+            vec2(origin.x, sep_y),
+            vec2(origin.x + content_w, sep_y),
+            rgbm(1, 1, 1, 0.22 * row_alpha),
+            1
+        )
+    end
+end
+
+local function flip_item_border(item, anim_state)
+    if item.is_self ~= true or anim_state.player_direction == nil then
+        return "gray"
+    end
+    return anim_state.player_direction
+end
+
+local function draw_competition_row_at_y(panel_o, content, row_x, list_top, entry, y_rel, border_style)
+    if entry == nil then return end
+    local y = panel_o.y + list_top + y_rel
+    local is_self = entry.is_self == true
+    local row_opts = layout.competition_row_opts(content, is_self)
+    row_opts.row_id = "comp_" .. tostring(entry.name or entry.rank)
+    row_opts.alpha = 1
+    row_opts.dimmed = not is_self
+    row_opts.draw_separator = false
+    row_opts.border_style = border_style or "gray"
+    draw.competition_row(vec2(row_x, y), entry, row_opts)
+end
+
+--- Lista competition con animación FLIP al reordenar slots.
+function draw.competition_ladder(panel_o, panel_size, content, ladder, anim_state)
+    local ins = content.clip_inset or { top = 7, bottom = 7, left = 6, right = 6 }
+    local list_top = content.list_top
+    local row_x = panel_o.x + ins.left + content.pad
+    local clip_tl = vec2(panel_o.x + ins.left, panel_o.y + ins.top)
+    local clip_br = vec2(panel_o.x + panel_size.x - ins.right, panel_o.y + panel_size.y - ins.bottom)
+
+    ui.pushClipRect(clip_tl, clip_br)
+
+    if anim_state ~= nil and anim_state.mode == "flip_reorder" and anim_state.items ~= nil then
+        local sorted = {}
+        for _, item in ipairs(anim_state.items) do
+            sorted[#sorted + 1] = item
+        end
+        table.sort(sorted, function(a, b) return a.y < b.y end)
+        for _, item in ipairs(sorted) do
+            if item.entry ~= nil then
+                draw_competition_row_at_y(
+                    panel_o, content, row_x, list_top, item.entry, item.y,
+                    flip_item_border(item, anim_state)
+                )
+            end
+        end
+    elseif ladder ~= nil and ladder.slots ~= nil then
+        for i = 0, layout.COMPETITION_ROW_COUNT - 1 do
+            local entry = ladder.slots[i]
+            if entry ~= nil then
+                local y = layout.competition_slot_y(content, i)
+                draw_competition_row_at_y(panel_o, content, row_x, list_top, entry, y, "gray")
+            end
+        end
+    end
+
+    ui.popClipRect()
 end
 
 local function profile_name_text(entry)
@@ -349,17 +434,31 @@ end
 
 local function measure_text_column(entry, opts, m)
     local name_text = profile_name_text(entry)
-    local car_prefix = car_line_prefix(entry, opts)
+    local car_name = profile_car_name(entry)
+    local rank_str = entry.rank ~= nil and ("#" .. tostring(entry.rank) .. " ") or ""
+    local car_mid = car_name .. " - "
     local time_str = theme.format_lap(entry.lap_ms or entry.last_lap_ms or entry.best_lap_ms)
 
     local name_sz = measure_dwrite(theme.fonts.bold, name_text, m.name_fs)
-    local sub_sz = measure_dwrite(theme.fonts.medium, car_prefix .. " - " .. time_str, m.sub_fs)
+    local sub_sz = measure_dwrite(theme.fonts.medium, rank_str .. car_mid .. time_str, m.sub_fs)
     local tier_w = math.max(14, m.tier) + m.name_tier_gap
     local name_row_w = name_sz.x + tier_w
     local text_w = math.max(name_row_w, sub_sz.x)
     local text_h = name_sz.y + m.line_gap + sub_sz.y
 
-    return text_w, text_h, name_text, car_prefix, time_str, name_sz, sub_sz
+    return text_w, text_h, name_text, rank_str, car_mid, time_str, name_sz, sub_sz
+end
+
+local function blend_toward_accent(base, pulse)
+    if pulse == nil or pulse <= 0 then return base end
+    local h = theme.colors.accent
+    local t = pulse * pulse
+    return rgbm(
+        base.r + (h.r - base.r) * t,
+        base.g + (h.g - base.g) * t,
+        base.b + (h.b - base.b) * t,
+        base.mult
+    )
 end
 
 function draw.profile_card(panel_o, panel_size, entry, opts)
@@ -368,8 +467,9 @@ function draw.profile_card(panel_o, panel_size, entry, opts)
     local m = profile_metrics_from_opts(opts)
     local url = images.resolve_url(entry.name, entry.avatar_url)
     local pad = layout.CARD_EDGE_PAD
+    local hl = opts.highlights or {}
 
-    local text_w, text_h, name_text, car_prefix, time_str, name_sz, sub_sz =
+    local text_w, text_h, name_text, rank_str, car_mid, time_str, name_sz, sub_sz =
         measure_text_column(entry, opts, m)
 
     local avatar_pos = vec2(panel_o.x + pad, panel_o.y + pad + layout.AVATAR_Y_EXTRA)
@@ -386,14 +486,31 @@ function draw.profile_card(panel_o, panel_size, entry, opts)
     local tier_x = tx + name_sz.x + m.name_tier_gap
     local name_center_y = text_y + name_sz.y * 0.5
     local tier_y = name_center_y - m.tier * 0.5
-    draw.tier_badge(vec2(tier_x, tier_y), tier_n, math.max(14, m.tier))
+    local tier_sz = math.max(14, m.tier)
+
+    if (hl.tier or 0) > 0 then
+        local pad_h = 2
+        ui.drawRectFilled(
+            vec2(tier_x - pad_h, tier_y - pad_h),
+            vec2(tier_x + tier_sz + pad_h, tier_y + tier_sz + pad_h),
+            rgbm(0.35, 0.78, 1.0, 0.18 * hl.tier),
+            3,
+            layout.corners_all()
+        )
+    end
+    draw.tier_badge(vec2(tier_x, tier_y), tier_n, tier_sz)
 
     local sub_y = text_y + name_sz.y + m.line_gap
+    local sub_x = tx
 
     ui.pushDWriteFont(theme.fonts.medium)
-    ui.dwriteDrawText(car_prefix .. " - ", m.sub_fs, vec2(tx, sub_y), theme.colors.white)
-    local pw = measure_text(theme.fonts.medium, car_prefix .. " - ", m.sub_fs)
-    ui.dwriteDrawText(time_str, m.sub_fs, vec2(tx + pw, sub_y), theme.colors.accent)
+    if rank_str ~= "" then
+        ui.dwriteDrawText(rank_str, m.sub_fs, vec2(sub_x, sub_y), blend_toward_accent(theme.colors.white, hl.rank))
+        sub_x = sub_x + measure_text(theme.fonts.medium, rank_str, m.sub_fs)
+    end
+    ui.dwriteDrawText(car_mid, m.sub_fs, vec2(sub_x, sub_y), theme.colors.white)
+    sub_x = sub_x + measure_text(theme.fonts.medium, car_mid, m.sub_fs)
+    ui.dwriteDrawText(time_str, m.sub_fs, vec2(sub_x, sub_y), blend_toward_accent(theme.colors.accent, hl.time))
     ui.popDWriteFont()
 end
 
@@ -404,6 +521,7 @@ function draw.profile_block(win_origin, win_size, entry, extra)
     local opts = {
         show_rank_on_car = true,
         metrics = layout.profile_metrics(ps),
+        highlights = extra.highlights,
     }
     draw.profile_card(panel_o, ps, entry, opts)
 end

@@ -73,7 +73,7 @@ Por defecto el HUD usa la API en el VPS (`common/data.lua` → `api_data.lua`).
 Ahora el cliente consulta primero una versión ligera y solo descarga la sesión cuando cambia:
 
 ```
-GET http://176.57.150.251:3000/hud/version
+GET http://13.140.160.131:3000/hud/version
   ?serverName=&track=&steamIds=
 ```
 

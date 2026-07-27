@@ -39,6 +39,68 @@ local RIVAL_BELOW = {
     avatar_url = avatar("Keisuke Takahashi"),
 }
 
+local RIVAL_RANK_4 = {
+    rank = 4,
+    name = "Itsuki Takeuchi",
+    tier = 6,
+    lap_ms = 285400,
+    car_name = "Silvia S13",
+    avatar_url = avatar("Itsuki Takeuchi"),
+}
+
+local RIVAL_BELOW_ALT = {
+    rank = 3,
+    name = "Itsuki Takeuchi",
+    tier = 6,
+    lap_ms = 285400,
+    car_name = "Silvia S13",
+    avatar_url = avatar("Itsuki Takeuchi"),
+}
+
+local function rival_below_override()
+    local key = string.lower(tostring(ac.storage("ProjectD-HUD:competition_mock_rival_below", "keisuke"):get()))
+    if key == "itsuki" then return RIVAL_BELOW_ALT end
+    if key == "none" or key == "0" or key == "" then return nil end
+    return RIVAL_BELOW
+end
+
+local function rivals_for_rank(rank)
+    rank = tonumber(rank) or 2
+    if rank <= 1 then
+        return {
+            above = nil,
+            below = {
+                rank = 2,
+                name = "Takumi Fujiwara",
+                tier = 9,
+                lap_ms = 279650,
+                car_name = "Trueno AE86",
+                avatar_url = avatar("Takumi Fujiwara"),
+            },
+        }
+    end
+    if rank == 2 then
+        return { above = RIVAL_ABOVE, below = rival_below_override() }
+    end
+    if rank == 3 then
+        return {
+            above = {
+                rank = 2,
+                name = "Takumi Fujiwara",
+                tier = 9,
+                lap_ms = 279650,
+                car_name = "Trueno AE86",
+                avatar_url = avatar("Takumi Fujiwara"),
+            },
+            below = RIVAL_RANK_4,
+        }
+    end
+    return {
+        above = RIVAL_BELOW,
+        below = nil,
+    }
+end
+
 local PROFILES = {
     ["76561198012345678"] = {
         name = "Takumi Fujiwara",
@@ -108,7 +170,12 @@ function mock.get_competition_ladder(_car_filter)
     end
 
     local rank = tonumber(player.rank) or 0
-    local rivals = player.rivals or { above = nil, below = nil }
+    local mock_rank = tonumber(ac.storage("ProjectD-HUD:competition_mock_rank", 0):get()) or 0
+    if mock_rank > 0 then
+        rank = mock_rank
+    end
+
+    local rivals = rivals_for_rank(rank)
     local center = {
         rank = rank,
         name = player.name,
@@ -131,6 +198,13 @@ function mock.get_competition_ladder(_car_filter)
 end
 
 --- Battle HUD mock — ac.storage("ProjectD-HUD:battle_mock_state", "matchmaking"|"vs"|"countdown"|"active"|"cancelled"|"result"|"draw")
+local battle_parse = require("common.api.battle_parse")
+
+local function with_battle_display(battle)
+    if battle == nil then return nil end
+    return battle_parse.attach_display(battle)
+end
+
 function mock.get_battle()
     local key = string.lower(tostring(ac.storage("ProjectD-HUD:battle_mock_state", "active"):get()))
     local player_left = {
@@ -151,17 +225,18 @@ function mock.get_battle()
     }
 
     if key == "matchmaking" then
-        return {
+        return with_battle_display({
             state = "pairing",
+            looking_for_opponent = true,
             center_text = "MATCHMAKING",
             mode = "LOOKING",
             player_left = player_left,
             player_right = { placeholder = true },
-        }
+        })
     end
 
     if key == "vs" then
-        return {
+        return with_battle_display({
             state = "armed",
             center_text = "VS",
             mode = "ARMED",
@@ -170,22 +245,23 @@ function mock.get_battle()
             score_right = 0,
             player_left = player_left,
             player_right = player_right,
-        }
+        })
     end
 
     if key == "countdown" then
-        return {
+        return with_battle_display({
             state = "arming",
+            arming_countdown = 5,
             center_text = "5",
             mode = "ARMING",
             countdown_hint = "CONTINUE: MAINTAIN  ·  CANCEL: BREAK FORMATION",
             player_left = player_left,
             player_right = player_right,
-        }
+        })
     end
 
     if key == "cancelled" then
-        return {
+        return with_battle_display({
             state = "cancelled",
             status = "cancelled",
             center_text = "CANCELLED",
@@ -194,11 +270,11 @@ function mock.get_battle()
             event_label = "FORMATION BROKEN",
             player_left = player_left,
             player_right = player_right,
-        }
+        })
     end
 
     if key == "result" then
-        return {
+        return with_battle_display({
             state = "finished",
             status = "finished",
             center_text = "WINNER",
@@ -214,11 +290,11 @@ function mock.get_battle()
             final_score_text = "1-0",
             player_left = player_left,
             player_right = player_right,
-        }
+        })
     end
 
     if key == "draw" then
-        return {
+        return with_battle_display({
             state = "finished",
             status = "draw",
             center_text = "DRAW",
@@ -226,10 +302,10 @@ function mock.get_battle()
             score_right = 0,
             player_left = player_left,
             player_right = player_right,
-        }
+        })
     end
 
-    return {
+    return with_battle_display({
         state = "active",
         center_text = "LEAD",
         mode = "LEAD",
@@ -243,7 +319,7 @@ function mock.get_battle()
         event_label = "OVERTAKE +1",
         player_left = player_left,
         player_right = player_right,
-    }
+    })
 end
 
 return mock

@@ -6,10 +6,27 @@ local data = require("common.data")
 local state = require("common.api.state")
 local draw = require("common.draw")
 local images = require("common.images")
+local competition_anim = require("common.competition_anim")
 local mod = {}
 
 local CAR_FILTER = "global"
 local avatars_prefetched_for = ""
+
+local function ladder_prefetch_key(ladder)
+    if ladder == nil or ladder.slots == nil then return "" end
+    local parts = { tostring(state.session_seq or 0) }
+    for i = 0, layout.COMPETITION_ROW_COUNT - 1 do
+        local e = ladder.slots[i]
+        if e ~= nil then
+            parts[#parts + 1] = tostring(i)
+                .. ":" .. tostring(e.rank or 0)
+                .. ":" .. tostring(e.lap_ms or e.best_lap_ms or 0)
+                .. ":" .. tostring(e.name or "")
+                .. ":" .. tostring(e.avatar_url or "")
+        end
+    end
+    return table.concat(parts, "|")
+end
 
 function mod.init()
     images.init()
@@ -27,6 +44,7 @@ end
 
 function mod.on_session_start()
     avatars_prefetched_for = ""
+    competition_anim.reset()
 end
 
 function mod.on_open() end
@@ -35,12 +53,15 @@ function mod.update() end
 
 function mod.main(dt)
     theme.ensure_fonts()
+    if data.tick ~= nil then
+        data.tick(CAR_FILTER)
+    end
+
     local win = ui.windowSize()
     local po, ps = draw.competition_panel(vec2(0, 0), win)
     local panel_o = po
     local content = layout.competition_content(ps)
 
-    local pad = content.pad
     local ladder = data.get_competition_ladder(CAR_FILTER)
 
     if data.is_account_restricted ~= nil and data.is_account_restricted() then
@@ -48,17 +69,11 @@ function mod.main(dt)
         return
     end
 
-    local center = ladder ~= nil and ladder.slots[1] or nil
-    local prefetch_key = tostring(state.session_seq or 0) .. "|"
-        .. (center ~= nil
-        and (tostring(center.name) .. "|" .. tostring(center.avatar_url or ""))
-        or "")
-    if center ~= nil and avatars_prefetched_for ~= prefetch_key then
+    local prefetch_key = ladder_prefetch_key(ladder)
+    if ladder ~= nil and ladder.slots[1] ~= nil and avatars_prefetched_for ~= prefetch_key then
         avatars_prefetched_for = prefetch_key
         mod.prefetch_avatars(ladder)
     end
-
-    local y = panel_o.y + content.list_top
 
     if ladder == nil or ladder.slots[1] == nil then
         local msg = "No profile data"
@@ -72,19 +87,9 @@ function mod.main(dt)
         return
     end
 
-    local row_x = panel_o.x + pad
-    for i = 0, layout.COMPETITION_ROW_COUNT - 1 do
-        local entry = ladder.slots[i]
-        local row_h = content.row_heights[i] or content.side_row_h
-
-        if entry ~= nil then
-            local row_opts = layout.competition_row_opts(content)
-            row_opts.row_id = "comp_" .. tostring(i) .. "_" .. tostring(entry.rank)
-            draw.competition_row(vec2(row_x, y), entry, row_opts)
-        end
-
-        y = y + row_h + (content.row_gap or 0)
-    end
+    competition_anim.tick(dt, ladder, content)
+    local anim_state = competition_anim.get_draw_state(content)
+    draw.competition_ladder(panel_o, ps, content, ladder, anim_state)
 end
 
 return mod
