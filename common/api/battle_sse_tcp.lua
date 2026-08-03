@@ -25,7 +25,14 @@ end
 local function load_ssl()
     if ssl_unavailable then return nil end
     if ssl_mod ~= nil then return ssl_mod end
-    for _, name in ipairs({ "ssl", "luasec", "shared/ssl" }) do
+    for _, name in ipairs({
+        "ssl",
+        "luasec",
+        "shared/ssl",
+        "socket.ssl",
+        "ssl.context",
+        "socket.ssl.context",
+    }) do
         local ok, mod = pcall(require, name)
         if ok and mod ~= nil and mod.wrap ~= nil then
             ssl_mod = mod

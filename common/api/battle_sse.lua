@@ -357,6 +357,7 @@ local function try_tcp_connect(url, ctx)
         state.battle_sse_last_activity_at = 0
         state.battle_sse_web_stall_at = 0
         state.battle_last_error = nil
+        state.hud_transport = "tcp"
         return true
     end
     return false
@@ -368,11 +369,13 @@ function battle_sse.connect(url, ctx)
     state.battle_sse_steam_id = util.safe_str(ctx.player_steam_id)
 
     if try_tcp_connect(url, ctx) then
+        state.hud_transport = "tcp"
         return true
     end
 
-    battle_fetch.debug("sse tcp unavailable or failed, trying web stream")
-    return connect_web(url, ctx)
+    -- CSP 0.2.x web.get buffers the full body on close — no incremental SSE.
+    battle_fetch.debug("sse tcp unavailable — snapshot poll loads hud_session")
+    return false
 end
 
 function battle_sse.disconnect()
@@ -410,15 +413,20 @@ function battle_sse.poll()
     local ctx = state.battle_sse_ctx
     battle_fetch.debug("sse web stalled — retry tcp")
 
-    battle_sse.disconnect()
-    state.battle_sse_reconnect_at = 0
-    state.battle_sse_connected_at = 0
-
-    if url ~= "" and ctx ~= nil and try_tcp_connect(url, ctx) then
+    if url ~= "" and ctx ~= nil and battle_sse_tcp.can_connect(url) then
+        battle_sse.disconnect()
+        state.battle_sse_reconnect_at = 0
+        state.battle_sse_connected_at = 0
+        if try_tcp_connect(url, ctx) then
+            state.hud_transport = "tcp"
+            return
+        end
+        state.battle_sse_reconnect_at = now + (config.HUD_SSE_RECONNECT_SEC or 3)
         return
     end
 
-    state.battle_sse_reconnect_at = now + (config.HUD_SSE_RECONNECT_SEC or 3)
+    -- HTTPS without TLS module: keep web slot open; snapshot poll supplies profile data.
+    battle_fetch.debug("sse web stalled — waiting for snapshot poll (no tls)")
 end
 
 function battle_sse.is_active()

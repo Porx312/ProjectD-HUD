@@ -7,6 +7,7 @@ local profile = require("common.api.profile")
 local bundle = require("common.api.bundle")
 local battle_fetch = require("common.api.battle_fetch")
 local hud_transport = require("common.api.battle_transport")
+local session_snapshot = require("common.api.session_snapshot")
 local battle_parse = require("common.api.battle_parse")
 local status = require("common.api.status")
 local session_version = require("common.api.session_version")
@@ -58,6 +59,7 @@ function api.tick(_car_filter)
         local ok_step = pcall(function()
             util.clear_stale_presence_error()
             pcall(hud_transport.tick, ctx, now)
+            pcall(session_snapshot.tick, ctx, now)
             pcall(session_version.tick, ctx, now)
         end)
         if not ok_step then
@@ -211,6 +213,7 @@ function api.reset_session_state()
     state.version_poll_inflight = false
     bundle.clear_cache()
     hud_transport.reset()
+    session_snapshot.reset()
 end
 
 function api.on_session_start()

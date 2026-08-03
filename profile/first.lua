@@ -4,23 +4,43 @@ local theme = require("common.theme")
 local data = require("common.data")
 local draw = require("common.draw")
 local images = require("common.images")
+local util = require("common.api.util")
 local profile_display = require("common.profile.display")
 local mod = {}
 
 local avatars_prefetched_for = ""
 local DEBUG_STORAGE = ac.storage("ProjectD-HUD:battle_debug", false)
 
+local function transport_mode(st)
+    local mode = util.safe_str(st.hud_transport)
+    if mode ~= "" then return mode end
+    mode = util.safe_str(st.battle_sse_mode)
+    if mode ~= "" then return mode end
+    if st.battle_sse then return "?" end
+    return "off"
+end
+
 local function transport_status_line()
     if data.get_status == nil then return nil end
     local ok, st = pcall(data.get_status)
     if not ok or st == nil then return nil end
+    local err = util.safe_str(st.error)
+    if err == "" then err = util.safe_str(st.battle_last_error) end
+    local web = util.safe_str(st.last_web_event)
+    local steam = util.safe_str(st.steam_id)
+    if steam ~= "" and #steam > 6 then
+        steam = "..." .. steam:sub(-6)
+    end
     return string.format(
-        "mode=%s evt=%s wait=%s bundle=%s profile=%s",
-        tostring(st.battle_sse_mode ~= "" and st.battle_sse_mode or (st.battle_sse and "?" or "off")),
+        "mode=%s evt=%s wait=%s bundle=%s profile=%s err=%s web=%s steam=%s",
+        transport_mode(st),
         tostring(st.battle_event_name or ""),
         tostring(st.hud_waiting_reason or ""),
         st.has_bundle and "y" or "n",
-        st.has_profile and "y" or "n"
+        st.has_profile and "y" or "n",
+        err ~= "" and err or "-",
+        web ~= "" and web or "-",
+        steam ~= "" and steam or "-"
     )
 end
 

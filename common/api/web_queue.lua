@@ -72,15 +72,6 @@ local function start_stream_item(item)
             item.callbacks.on_response(err, response)
         end
 
-        if item.expect_persistent and not util.is_web_error(err) then
-            local code = util.http_status_code(response)
-            if code == nil or code == 200 then
-                if response ~= nil and response.complete == false then return end
-                if response ~= nil and response.finished == false then return end
-                if state.web_stream == item then return end
-            end
-        end
-
         state.web_stream = nil
         local code = util.http_status_code(response)
         if util.is_web_error(err) then
@@ -95,14 +86,8 @@ local function start_stream_item(item)
         web_queue.pump()
     end
 
-    local function on_chunk(a, b)
-        local chunk = extract_chunk(a, b)
-        if chunk ~= nil and item.callbacks and item.callbacks.on_chunk then
-            item.callbacks.on_chunk(chunk)
-        end
-    end
-
-    local function start_get()
+    -- CSP 0.2.x web.get / web.request use a single callback (full body on close).
+    local ok, result = pcall(function()
         if type(web.request) == "function" then
             return web.request({
                 url = item.url,
@@ -111,41 +96,26 @@ local function start_stream_item(item)
                     ["Accept"] = "text/event-stream",
                     ["Cache-Control"] = "no-cache",
                 },
-            }, on_done, on_chunk)
+            }, on_done)
         end
-        return web.get(item.url, on_done, on_chunk)
-    end
-
-    local ok, result = pcall(start_get)
+        return web.get(item.url, on_done)
+    end)
 
     if not ok then
-        item.streaming_via = "get_no_chunk"
-        log_event(item.kind .. " warn", "web.request failed — web.get may buffer SSE until close")
-        local ok2 = pcall(function()
-            item.request = web.get(item.url, on_done)
-        end)
-        if not ok2 then
-            state.web_stream = nil
-            log_event(item.kind .. " throw", tostring(result))
-            if item.callbacks and item.callbacks.on_complete then
-                item.callbacks.on_complete(tostring(result), nil)
-            end
-            ensure_web_timeouts(false)
-            web_queue.pump()
-            return
+        state.web_stream = nil
+        log_event(item.kind .. " throw", tostring(result))
+        if item.callbacks and item.callbacks.on_complete then
+            item.callbacks.on_complete(tostring(result), nil)
         end
-    elseif type(result) == "table" or type(result) == "userdata" then
-        item.request = result
-        item.streaming_via = "request"
-    else
-        item.streaming_via = "get"
+        ensure_web_timeouts(false)
+        web_queue.pump()
+        return
     end
 
-    if item.kind == "hud_sse" or item.kind == "battle_sse" then
-        if item.callbacks and item.callbacks.on_open then
-            pcall(item.callbacks.on_open)
-        end
+    if type(result) == "table" or type(result) == "userdata" then
+        item.request = result
     end
+    item.streaming_via = "buffered"
 end
 
 function web_queue.poll_stream()
@@ -252,7 +222,9 @@ function web_queue.get(url, kind, callback)
         kind = kind or "http",
         callback = callback,
     }
-    if kind == "avatar" then
+    if kind == "hud_snapshot" then
+        table.insert(state.web_queue, 1, item)
+    elseif kind == "avatar" then
         table.insert(state.web_queue, 1, item)
     else
         state.web_queue[#state.web_queue + 1] = item

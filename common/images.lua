@@ -11,6 +11,12 @@ local avatar_pending = {}    ---@type table<string, boolean>
 local avatar_failed_at = {}  ---@type table<string, number>
 local AVATAR_RETRY_SEC = 12
 
+local function profile_pending()
+    local ok, st = pcall(require, "common.api.state")
+    if not ok or st == nil then return false end
+    return st.cached_bundle == nil
+end
+
 local function web_slots_full()
     local ok_wq, web_queue = pcall(require, "common.api.web_queue")
     if ok_wq and web_queue ~= nil and web_queue.inflight_count ~= nil then
@@ -108,6 +114,10 @@ end
 
 function images.request_avatar(url)
     if url == nil or url == "" then return end
+    if profile_pending() then
+        avatar_pending[url] = true
+        return
+    end
     local cached = avatar_textures[url]
     if cached ~= nil and cached ~= false then return end
     if avatar_loading[url] then return end
@@ -166,6 +176,7 @@ function images.request_avatar(url)
 end
 
 function images.tick()
+    if profile_pending() then return end
     if web_slots_full() then return end
     local started = 0
     for pending_url, _ in pairs(avatar_pending) do

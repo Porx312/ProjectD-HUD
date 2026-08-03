@@ -70,6 +70,10 @@ local function create_state()
         battle_sse_last_activity_at = 0,
         battle_sse_mode = nil,
         battle_sse_steam_id = "",
+        hud_transport = "",
+
+        snapshot_poll_at = 0,
+        snapshot_inflight = false,
 
         battle_last_event_name = "",
         battle_last_sse_summary = "",

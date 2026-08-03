@@ -242,6 +242,12 @@ function status.get_status()
 
         battle_sse_mode = util.safe_str(state.battle_sse_mode),
 
+        hud_transport = util.safe_str(state.hud_transport),
+
+        battle_last_error = util.safe_str(state.battle_last_error),
+
+        last_web_event = util.safe_str(state.last_web_event),
+
         battle_snap_at = state.battle_last_snapshot_at or 0,
 
         battle_event_name = util.safe_str(state.battle_last_event_name),
