@@ -24,6 +24,8 @@ local function create_state()
         web_stream = nil,
 
         hud_version = "",
+        hud_lb_version = "",
+        session_version = "",
 
         session_seq = 0,
         version_poll_at = 0,
