@@ -45,6 +45,15 @@ local function infer_event_name(payload)
         return "hud_session"
     end
 
+    -- Convex session bundle uses root profile/context (no players[]).
+    if payload.profile ~= nil or payload.context ~= nil then
+        return "hud_session"
+    end
+
+    if payload.ok == true and payload.version ~= nil then
+        return "hud_session"
+    end
+
     if payload.version ~= nil and payload.state == nil and payload.battleId == nil
         and payload.player1 == nil and payload.players == nil then
         return "hud_version"
@@ -58,10 +67,6 @@ local function infer_event_name(payload)
         return "battle"
     end
 
-    if payload.ok == true and payload.version ~= nil then
-        return "hud_session"
-    end
-
     return nil
 end
 
@@ -72,6 +77,9 @@ local function canonical_event_name(event_name, payload)
     if event_name ~= "" then
         if event_name == "session:update" then return "hud_session" end
         if event_name == "session:error" then return "hud_error" end
+        if event_name == "hud_session" then return "hud_session" end
+        if event_name == "hud_error" then return "hud_error" end
+        if event_name == "hud_version" then return "hud_version" end
         if event_name == "battle:update" or event_name == "battle:clear" then return "battle" end
         return event_name
     end
@@ -94,6 +102,7 @@ local function dispatch_event(event_name, data_str, ctx)
     end
 
     state.battle_last_event_name = event_name
+    battle_fetch.debug("sse evt=" .. event_name)
     local steam_id = ctx ~= nil and ctx.player_steam_id or state.battle_sse_steam_id or ""
 
     if event_name == "hud_version" then
@@ -210,12 +219,16 @@ local function on_stream_closed(err, response, ctx)
                 battle_fetch.debug("sse presence ignored: " .. tostring(err_reason))
             else
                 state.battle_last_error = err_reason
+                state.last_error = err_reason
                 battle_fetch.debug("sse closed reason=" .. tostring(err_reason))
             end
         else
             local code = util.http_status_code(response)
             if code ~= nil and code ~= 200 then
                 state.battle_last_error = "http_" .. tostring(code)
+                if code == 404 then
+                    state.last_error = "player_not_connected"
+                end
                 battle_fetch.debug("sse closed http=" .. tostring(code))
             else
                 battle_fetch.debug("sse closed (reconnect in " .. tostring(reconnect) .. "s)")
@@ -247,6 +260,10 @@ local function on_stream_response(err, response, ctx, item)
         local _, err_reason = util.read_api_response(err, response)
         if err_reason ~= nil and not util.should_ignore_error(err_reason) and not util.ignore_presence_error(err_reason) then
             state.battle_last_error = err_reason
+            state.last_error = err_reason
+        elseif code == 404 then
+            state.battle_last_error = "http_404"
+            state.last_error = "player_not_connected"
         end
         on_stream_closed(err, response, ctx)
         return
@@ -324,12 +341,17 @@ local function connect_web(url, ctx)
     return true
 end
 
+local function prefer_web_stream(url)
+    url = util.safe_str(url):lower()
+    return url:sub(1, 8) == "https://"
+end
+
 function battle_sse.connect(url, ctx)
     ctx = ctx or {}
     state.battle_sse_ctx = ctx
     state.battle_sse_steam_id = util.safe_str(ctx.player_steam_id)
 
-    if battle_sse_tcp.available() then
+    if not prefer_web_stream(url) and battle_sse_tcp.available() then
         if battle_sse_tcp.connect(url, ctx) then
             state.battle_sse_connected = true
             state.battle_sse_stream_pending = false
@@ -337,6 +359,8 @@ function battle_sse.connect(url, ctx)
             return true
         end
         battle_fetch.debug("sse tcp failed, trying web.get")
+    else
+        battle_fetch.debug("hud sse using web stream")
     end
 
     return connect_web(url, ctx)

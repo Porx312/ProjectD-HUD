@@ -69,19 +69,80 @@ Edita `common/mock_data.lua`:
 
 ## API en vivo (ProjectD)
 
-Por defecto el HUD usa la API en el VPS (`common/data.lua` → `api_data.lua`).
-Ahora el cliente consulta primero una versión ligera y solo descarga la sesión cuando cambia:
+Por defecto el HUD usa la API staging (`common/data.lua` → `api_data.lua`) vía **SSE unificado**.
+
+**URL base** en `common/config.lua`:
 
 ```
-GET http://13.140.160.131:3000/hud/version
-  ?serverName=&track=&steamIds=
+https://dev-api.projectd.space
 ```
 
-- Si `version` cambia, el HUD llama a `GET /hud/session`
-- Top 10: `GET /hud/top10?serverName&track&trackConfig&car`
-- Jugador: `GET /hud/player?steamId&serverName&track&trackConfig`
-- Bundle (3 widgets): `GET /hud/session` (incluye `profile.rival`)
+No uses `localhost` ni la IP del VPS desde el juego.
 
-URL base en `common/config.lua`. Mocks offline: `ac.storage("ProjectD-HUD:use_api", false):set()`
+### Online setup checklist
 
-Docs: `ProjectD/docs/08-hud-api.md`
+1. **API** — `API_BASE_URL = "https://dev-api.projectd.space"` en `common/config.lua` (ya es el default).
+2. **Server bridge (recomendado)** — Copia `server-bridge/projectd_steam_bridge.lua` al server CSP:
+   ```
+   assettocorsa/extension/lua/online/projectd_steam_bridge.lua
+   ```
+   Publica tu Steam ID64 para el overlay (las apps Lua no pueden usar `ac.getUserSteamID()`).
+3. **Entrar al server online** — El HUD abre SSE al detectar sesión online:
+   ```
+   GET https://dev-api.projectd.space/hud/stream?steamId=YOUR_STEAM_ID&carFilter=global
+   ```
+   Si el VPS usa `HUD_API_KEY`, guarda la clave: `ac.storage("ProjectD-HUD:api_key", "…"):set()`
+4. **Esperar `hud_session`** — Profile/Competition muestran datos tras el evento SSE. Un breve *"Waiting for server registration…"* es normal hasta que el worker registre `player_join`. Si ves *"Server not registered in ProjectD — leave and rejoin"*, sal del server y vuelve a entrar (obligatorio tras cambios en ac-data).
+5. **Battle** — Mantén SSE activo mientras conduces. Acércate a otro piloto con SSE activo para pairing → arming → active.
+
+**Tras actualizar ac-data en el VPS:** `./start.sh dev` (o prod) y **re-entrar al server** para que Convex reciba `player_join` con el slug correcto (`server-4`, no solo "Battle").
+
+### Eventos SSE
+
+| Evento | Uso |
+|--------|-----|
+| `hud_session` | Perfil, tier, rivals (time attack) |
+| `hud_version` | Versiones de leaderboard |
+| `battle` | Snapshot de batalla |
+| `hud_error` | Errores (`player_not_connected`, etc.) |
+
+### Smoke test (fuera del juego)
+
+```bash
+./scripts/verify-battle-hud.sh YOUR_STEAM_ID
+```
+
+Debe mostrar eventos SSE en ~15 s.
+
+Verificar perfil completo (requiere estar **dentro** del server online):
+
+```bash
+./scripts/verify-convex-hud-session.sh YOUR_STEAM_ID
+```
+
+Debe imprimir `OK: hud_session received` con rank/elo/tier.
+
+Debug consola in-game (sin overlay):
+
+```lua
+ac.storage("ProjectD-HUD:battle_debug", true):set()
+```
+
+Logs en consola CSP: `sse evt=hud_session`, `sse evt=hud_error`, etc.
+
+Mocks offline: `ac.storage("ProjectD-HUD:use_api", false):set()`
+
+Docs: `ProjectD/docs/08-hud-api.md`, `ProjectD/docs/ac-data-hud-spec.md`
+
+## Module map (`common/`)
+
+| Domain | Layout | Draw | Other |
+|--------|--------|------|-------|
+| **Competition** | `common/layout/competition.lua` | `common/draw/competition/*` | `common/competition/anim.lua` |
+| **Profile** | `common/layout/profile.lua` | `common/draw/profile.lua` | `common/profile/display.lua` |
+| **Battle** | `common/layout/battle.lua` | `common/draw/battle/*` | `common/api/battle/*` |
+| **Shared** | `common/layout/shared.lua` | `common/draw/shared.lua` | `theme`, `data`, `images`, `config` |
+
+Legacy shims (`common/draw.lua`, `common/layout.lua`, etc.) re-export the assembled modules so existing `require("common.draw")` calls keep working.
+
+Verify structure (Git Bash): `./scripts/verify-requires.sh` and `./scripts/verify-competition-flip.sh`

@@ -53,7 +53,6 @@ function session_version.tick(ctx, now)
         state.battle_sse_reconnect_at = 0
         state.battle_sse_session_key = ""
         pcall(hud_transport.try_connect, ctx, os.clock())
-        ac.debug("ProjectD-HUD session", "version poll " .. prev .. " -> " .. ver)
     end)
 end
 

@@ -58,6 +58,7 @@ end
 local function disconnect_and_clear(_ctx, _now)
     disconnect_sse_only()
     battle_fetch.reset()
+    state.hud_waiting_reason = nil
 end
 
 local function session_key(ctx)
@@ -66,6 +67,8 @@ end
 
 function hud_transport.try_connect(ctx, now)
     now = now or os.clock()
+    if ctx.is_online ~= true then return false end
+
     ctx.player_steam_id = steam.normalize_steam_id(ctx.player_steam_id)
     if ctx.player_steam_id == "" then return false end
 
@@ -79,7 +82,7 @@ function hud_transport.try_connect(ctx, now)
     local url = stream_url(ctx)
     local sse_ctx = {
         player_steam_id = ctx.player_steam_id,
-        _sse_on_close = function(err, response)
+        _sse_on_close = function(_err, response)
             local reason = state.battle_last_error
             if should_retry_disconnect(reason, response) then
                 state.battle_sse_reconnect_at = now + (config.HUD_SSE_RECONNECT_SEC or 3)
@@ -102,13 +105,9 @@ function hud_transport.tick(ctx, now)
     now = now or os.clock()
     battle_fetch.tick_latch(now)
 
-    if not context.context_is_ready(ctx) then
+    if ctx.is_online ~= true then
         if battle_sse.is_active() or state.battle_sse_session_key ~= "" then
-            if battle_fetch.is_session_live(now) then
-                disconnect_sse_only()
-            else
-                disconnect_and_clear(ctx, now)
-            end
+            disconnect_and_clear(ctx, now)
         end
         return
     end
@@ -121,6 +120,13 @@ function hud_transport.tick(ctx, now)
     end
 
     ctx.player_steam_id = steam.normalize_steam_id(ctx.player_steam_id)
+
+    if ctx.player_steam_id == "" then
+        if battle_sse.is_active() then
+            battle_sse.poll()
+        end
+        return
+    end
 
     local key = session_key(ctx)
     if state.battle_sse_session_key ~= "" and state.battle_sse_session_key ~= key then
@@ -143,6 +149,7 @@ function hud_transport.reset()
     state.battle_sse_session_key = ""
     state.battle_sse_reconnect_at = 0
     state.battle_sse_connected_at = 0
+    state.hud_waiting_reason = nil
 end
 
 return hud_transport

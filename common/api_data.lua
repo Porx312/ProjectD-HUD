@@ -42,7 +42,7 @@ function api.fetch_session(_car_filter, force)
     if not force then return end
     local ok, ctx = pcall(context.read_session_context)
     hud_transport.reset()
-    if ok then
+    if ok and ctx.is_online == true then
         pcall(hud_transport.try_connect, ctx, os.clock())
     end
 end
@@ -78,12 +78,7 @@ end
 
 function api.is_loading()
     if profile_blocked() then return false end
-    if state.cached_bundle ~= nil then return false end
-    local ok, ctx = pcall(context.read_session_context)
-    if not ok or not context.context_is_ready(ctx) then return false end
-    if state.battle_sse_stream_pending then return true end
-    if not state.battle_sse_connected then return true end
-    return (state.battle_sse_last_activity_at or 0) <= 0
+    return status.is_loading()
 end
 
 function api.get_status()
@@ -210,6 +205,7 @@ function api.reset_session_state()
     state.web_inflight = nil
     state.web_stream = nil
     state.hud_version = ""
+    state.hud_waiting_reason = nil
     state.session_seq = 0
     state.version_poll_at = 0
     state.version_poll_inflight = false

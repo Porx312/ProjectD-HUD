@@ -4,10 +4,25 @@ local theme = require("common.theme")
 local data = require("common.data")
 local draw = require("common.draw")
 local images = require("common.images")
-local profile_display = require("common.profile_display")
+local profile_display = require("common.profile.display")
 local mod = {}
 
 local avatars_prefetched_for = ""
+local DEBUG_STORAGE = ac.storage("ProjectD-HUD:battle_debug", false)
+
+local function debug_status_line()
+    if DEBUG_STORAGE:get() ~= true then return nil end
+    if data.get_status == nil then return nil end
+    local ok, st = pcall(data.get_status)
+    if not ok or st == nil then return nil end
+    return string.format(
+        "evt=%s wait=%s bundle=%s profile=%s",
+        tostring(st.battle_event_name or ""),
+        tostring(st.hud_waiting_reason or ""),
+        st.has_bundle and "y" or "n",
+        st.has_profile and "y" or "n"
+    )
+end
 
 function mod.init()
     images.init()
@@ -64,12 +79,15 @@ function mod.main(dt)
     end
 
     ui.pushDWriteFont(theme.fonts.reg)
-    local msg = "Loading profile..."
-    if data.is_loading ~= nil and not data.is_loading() then
-        msg = "No profile data"
-        if data.get_status_message ~= nil then
-            msg = data.get_status_message("profile") or msg
-        end
+    local msg = "No profile data"
+    if data.get_status_message ~= nil then
+        msg = data.get_status_message("profile") or msg
+    elseif data.is_loading ~= nil and data.is_loading() then
+        msg = "Loading profile..."
+    end
+    local debug_line = debug_status_line()
+    if debug_line ~= nil then
+        msg = msg .. "\n" .. debug_line
     end
     local tw = ui.measureDWriteText(msg, 13).x
     ui.dwriteDrawText(msg, 13, vec2((win.x - tw) * 0.5, math.max(8, (win.y - 13) * 0.35)), theme.colors.muted)

@@ -4,9 +4,16 @@ local state = require("common.api.state")
 local util = require("common.api.util")
 
 local bundle = {}
+local profile = require("common.api.profile")
 
 function bundle.apply_bundle(data)
     if data == nil or data.ok ~= true then return false end
+
+    local coalesced = profile.coalesce_profile(data.profile)
+    if coalesced == nil or coalesced.isInvalidated == true then
+        return false
+    end
+    data.profile = coalesced
 
     state.cached_bundle = data
     state.cached_at = os.clock()

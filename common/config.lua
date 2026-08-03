@@ -2,7 +2,7 @@
 
 local config = {}
 
-config.API_BASE_URL = "http://13.140.160.131:3000"
+config.API_BASE_URL = "https://dev-api.projectd.space"
 config.HUD_STREAM_PATH = "/hud/stream"
 config.HUD_VERSION_PATH = "/hud/version"
 config.HUD_VERSION_POLL_SEC = 5

@@ -9,6 +9,7 @@ local function create_state()
 
         last_http_status = nil,
         last_error = nil,
+        hud_waiting_reason = nil,
         last_session_had_players = false,
 
         last_tick_at = -1,

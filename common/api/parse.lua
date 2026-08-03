@@ -78,9 +78,13 @@ function parse.normalize_session_response(data, steam_id)
         if out.profile.isInvalidated == true then
             state.last_error = "user_invalidated"
             out.profile = nil
+            return nil
         else
             state.last_error = nil
         end
+    else
+        state.last_error = "profile_unavailable"
+        return nil
     end
 
     return out

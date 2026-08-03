@@ -11,8 +11,8 @@ local battle_fetch = {}
 local DEBUG_STORAGE = ac.storage("ProjectD-HUD:battle_debug", false)
 
 local function battle_debug(msg)
-    if DEBUG_STORAGE:get() then
-        ac.debug("ProjectD-HUD battle", msg)
+    if DEBUG_STORAGE:get() == true then
+        ac.debug("ProjectD-HUD battle", util.safe_str(msg))
     end
 end
 

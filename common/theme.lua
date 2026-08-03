@@ -15,10 +15,30 @@ theme.colors = {
     leaderboard_sep = rgbm(1, 1, 1, 0.22),
     competition_row_border = rgbm(0.55, 0.55, 0.58, 0.38),
     competition_row_fill = rgbm(1, 1, 1, 0.04),
-    competition_rank_up = rgbm(0.22, 0.88, 0.42, 1),
+    competition_name = rgbm(1, 1, 1, 1),
+    competition_name_self = rgbm(0.62, 0.94, 1.0, 1),
+    competition_car = rgbm(0.78, 0.80, 0.84, 1),
+    competition_rank_label = rgbm(0.68, 0.72, 0.78, 1),
+    competition_best_lap = rgbm(0.58, 0.62, 0.68, 1),
+    competition_you_bg = rgbm(0.35, 0.82, 1.0, 1),
+    competition_you_text = rgbm(0.04, 0.08, 0.14, 1),
+    competition_status_above = rgbm(1.0, 0.45, 0.45, 1),
+    competition_status_below = rgbm(0.38, 0.92, 0.58, 1),
+    competition_rank_up = rgbm(0.28, 0.95, 0.50, 1),
     competition_rank_up_fill = rgbm(0.22, 0.88, 0.42, 0.12),
-    competition_rank_down = rgbm(0.92, 0.28, 0.28, 1),
+    competition_rank_down = rgbm(1.0, 0.38, 0.38, 1),
     competition_rank_down_fill = rgbm(0.92, 0.28, 0.28, 0.12),
+    competition_delta_ahead = rgbm(0.32, 0.95, 0.55, 1),
+    competition_delta_behind = rgbm(1.0, 0.42, 0.42, 1),
+    competition_avatar_ring_self = rgbm(0.45, 0.88, 1.0, 1),
+    competition_avatar_ring_above = rgbm(1.0, 0.42, 0.42, 1),
+    competition_avatar_ring_below = rgbm(0.35, 0.92, 0.55, 1),
+    competition_card_fill = rgbm(0.06, 0.08, 0.12, 0.88),
+    competition_card_border_above = rgbm(1.0, 0.38, 0.38, 0.85),
+    competition_card_border_self = rgbm(0.40, 0.85, 1.0, 0.95),
+    competition_card_border_below = rgbm(0.32, 0.90, 0.52, 0.85),
+    competition_card_glow_self = rgbm(0.35, 0.78, 1.0, 0.22),
+    competition_delta_suffix = rgbm(0.55, 0.58, 0.62, 1),
     avatar_ring   = rgbm(1, 1, 1, 0.35),
     avatar_fill   = rgbm(0.12, 0.12, 0.15, 1),
     tier_fallback = rgbm(0.85, 0.15, 0.12, 1),
@@ -106,6 +126,12 @@ function theme.format_lap(ms)
         return string.format("%d:%06.3f", min, sec)
     end
     return string.format("0:%06.3f", sec)
+end
+
+--- Gap absoluto en segundos (3 decimales) para delta vs jugador.
+function theme.format_lap_gap_sec(ms)
+    if ms == nil then return "0.000" end
+    return string.format("%.3f", math.abs(ms) / 1000)
 end
 
 --- Código corto de coche para profile/rival (#2 AE86 - 4:39.65).
