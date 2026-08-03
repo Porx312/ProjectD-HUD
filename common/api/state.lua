@@ -66,6 +66,7 @@ local function create_state()
         battle_sse_last_body_len = 0,
         battle_sse_session_key = "",
         battle_sse_connected_at = 0,
+        battle_sse_web_stall_at = 0,
         battle_sse_last_activity_at = 0,
         battle_sse_mode = nil,
         battle_sse_steam_id = "",

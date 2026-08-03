@@ -301,6 +301,8 @@ local function connect_web(url, ctx)
     state.battle_sse_buffer = ""
     state.battle_sse_last_body_len = 0
     state.battle_sse_mode = "web"
+    state.battle_sse_web_stall_at = 0
+    state.battle_sse_last_activity_at = 0
     state.last_fetch_url = url
     battle_fetch.debug("hud sse web connect " .. url)
 
@@ -338,12 +340,26 @@ local function connect_web(url, ctx)
 
     state.battle_sse_connected = true
     state.battle_sse_stream_pending = false
+    state.battle_sse_connected_at = os.clock()
     return true
 end
 
-local function prefer_web_stream(url)
-    url = util.safe_str(url):lower()
-    return url:sub(1, 8) == "https://"
+local WEB_SSE_STALL_SEC = 8
+
+local function try_tcp_connect(url, ctx)
+    if not battle_sse_tcp.can_connect(url) then
+        return false
+    end
+    if battle_sse_tcp.connect(url, ctx) then
+        state.battle_sse_connected = true
+        state.battle_sse_stream_pending = false
+        state.battle_sse_connected_at = os.clock()
+        state.battle_sse_last_activity_at = 0
+        state.battle_sse_web_stall_at = 0
+        state.battle_last_error = nil
+        return true
+    end
+    return false
 end
 
 function battle_sse.connect(url, ctx)
@@ -351,18 +367,11 @@ function battle_sse.connect(url, ctx)
     state.battle_sse_ctx = ctx
     state.battle_sse_steam_id = util.safe_str(ctx.player_steam_id)
 
-    if not prefer_web_stream(url) and battle_sse_tcp.available() then
-        if battle_sse_tcp.connect(url, ctx) then
-            state.battle_sse_connected = true
-            state.battle_sse_stream_pending = false
-            state.battle_last_error = nil
-            return true
-        end
-        battle_fetch.debug("sse tcp failed, trying web.get")
-    else
-        battle_fetch.debug("hud sse using web stream")
+    if try_tcp_connect(url, ctx) then
+        return true
     end
 
+    battle_fetch.debug("sse tcp unavailable or failed, trying web stream")
     return connect_web(url, ctx)
 end
 
@@ -373,15 +382,43 @@ function battle_sse.disconnect()
     state.battle_sse_stream_pending = false
     state.battle_sse_buffer = ""
     state.battle_sse_last_body_len = 0
+    state.battle_sse_web_stall_at = 0
     state.battle_sse_mode = nil
 end
 
 function battle_sse.poll()
     if state.battle_sse_mode == "tcp" then
         battle_sse_tcp.poll(battle_sse.feed)
-    else
-        web_queue.poll_stream()
+        return
     end
+
+    web_queue.poll_stream()
+
+    if state.battle_sse_mode ~= "web" or not state.battle_sse_connected then
+        return
+    end
+
+    local now = os.clock()
+    local connected_at = state.battle_sse_connected_at or 0
+    local last_activity = state.battle_sse_last_activity_at or 0
+    if connected_at <= 0 or last_activity > 0 then return end
+    if (now - connected_at) < WEB_SSE_STALL_SEC then return end
+    if (state.battle_sse_web_stall_at or 0) >= connected_at then return end
+
+    state.battle_sse_web_stall_at = now
+    local url = util.safe_str(state.last_fetch_url)
+    local ctx = state.battle_sse_ctx
+    battle_fetch.debug("sse web stalled — retry tcp")
+
+    battle_sse.disconnect()
+    state.battle_sse_reconnect_at = 0
+    state.battle_sse_connected_at = 0
+
+    if url ~= "" and ctx ~= nil and try_tcp_connect(url, ctx) then
+        return
+    end
+
+    state.battle_sse_reconnect_at = now + (config.HUD_SSE_RECONNECT_SEC or 3)
 end
 
 function battle_sse.is_active()

@@ -10,18 +10,23 @@ local mod = {}
 local avatars_prefetched_for = ""
 local DEBUG_STORAGE = ac.storage("ProjectD-HUD:battle_debug", false)
 
-local function debug_status_line()
-    if DEBUG_STORAGE:get() ~= true then return nil end
+local function transport_status_line()
     if data.get_status == nil then return nil end
     local ok, st = pcall(data.get_status)
     if not ok or st == nil then return nil end
     return string.format(
-        "evt=%s wait=%s bundle=%s profile=%s",
+        "mode=%s evt=%s wait=%s bundle=%s profile=%s",
+        tostring(st.battle_sse_mode ~= "" and st.battle_sse_mode or (st.battle_sse and "?" or "off")),
         tostring(st.battle_event_name or ""),
         tostring(st.hud_waiting_reason or ""),
         st.has_bundle and "y" or "n",
         st.has_profile and "y" or "n"
     )
+end
+
+local function debug_status_line()
+    if DEBUG_STORAGE:get() ~= true then return nil end
+    return transport_status_line()
 end
 
 function mod.init()
@@ -85,8 +90,12 @@ function mod.main(dt)
     elseif data.is_loading ~= nil and data.is_loading() then
         msg = "Loading profile..."
     end
+    local transport_line = transport_status_line()
+    if transport_line ~= nil then
+        msg = msg .. "\n" .. transport_line
+    end
     local debug_line = debug_status_line()
-    if debug_line ~= nil then
+    if debug_line ~= nil and debug_line ~= transport_line then
         msg = msg .. "\n" .. debug_line
     end
     local tw = ui.measureDWriteText(msg, 13).x

@@ -119,6 +119,8 @@ local function start_stream_item(item)
     local ok, result = pcall(start_get)
 
     if not ok then
+        item.streaming_via = "get_no_chunk"
+        log_event(item.kind .. " warn", "web.request failed — web.get may buffer SSE until close")
         local ok2 = pcall(function()
             item.request = web.get(item.url, on_done)
         end)
@@ -134,6 +136,9 @@ local function start_stream_item(item)
         end
     elseif type(result) == "table" or type(result) == "userdata" then
         item.request = result
+        item.streaming_via = "request"
+    else
+        item.streaming_via = "get"
     end
 
     if item.kind == "hud_sse" or item.kind == "battle_sse" then
@@ -163,6 +168,13 @@ function web_queue.poll_stream()
             item.last_body_len = #body
             if item.callbacks and item.callbacks.on_chunk then
                 item.callbacks.on_chunk(delta)
+            end
+            if item.callbacks and item.callbacks.on_response then
+                item.callbacks.on_response(nil, {
+                    body = body,
+                    complete = false,
+                    finished = false,
+                })
             end
         end
     end

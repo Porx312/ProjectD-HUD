@@ -122,11 +122,14 @@ Verificar perfil completo (requiere estar **dentro** del server online):
 
 Debe imprimir `OK: hud_session received` con rank/elo/tier.
 
-Debug consola in-game (sin overlay):
+Enable in-game debug (extra CSP console logs):
 
 ```lua
 ac.storage("ProjectD-HUD:battle_debug", true):set()
 ```
+
+When profile is loading, the Profile widget shows a transport line: `mode=tcp|web evt=... bundle=...`.
+HTTPS SSE uses **TCP+TLS** first (`battle_sse_tcp.lua`); `web.get` is fallback only.
 
 Logs en consola CSP: `sse evt=hud_session`, `sse evt=hud_error`, etc.
 
