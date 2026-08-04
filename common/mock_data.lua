@@ -313,6 +313,7 @@ function mock.get_battle()
             elo = 1380,
             avatar_url = avatar("Takumi Fujiwara"),
             role = "lead",
+            ahead_on_track = true,
         }
         return with_battle_display({
             state = "active",
@@ -338,6 +339,7 @@ function mock.get_battle()
             elo = 1380,
             avatar_url = avatar("Takumi Fujiwara"),
             role = "chase",
+            ahead_on_track = false,
         }
         return with_battle_display({
             state = "active",

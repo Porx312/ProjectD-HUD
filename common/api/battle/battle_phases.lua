@@ -144,9 +144,16 @@ function phases.parse_gap(raw, local_player, default_disappear_gap_m)
     if gap3d == nil then gap3d = 0 end
     local abs_m = math.max(0, gap3d)
     local role = string.upper(util.safe_str(local_player and local_player.role))
+    local ahead_on_track = local_player and local_player.ahead_on_track
     local opponent_ahead = nil
     local signed = 0
-    if role == "LEAD" then
+    if ahead_on_track == true then
+        opponent_ahead = false
+        signed = abs_m
+    elseif ahead_on_track == false then
+        opponent_ahead = true
+        signed = -abs_m
+    elseif role == "LEAD" then
         opponent_ahead = false
         signed = abs_m
     elseif role == "CHASE" then

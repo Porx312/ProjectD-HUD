@@ -26,6 +26,15 @@ function players.placeholder_opponent()
     }
 end
 
+local function parse_ahead_on_track(p)
+    if p == nil or type(p) ~= "table" then return nil end
+    local raw = p.aheadOnTrack
+    if raw == nil then raw = p.ahead_on_track end
+    if raw == true then return true end
+    if raw == false then return false end
+    return nil
+end
+
 function players.player_from_api(p)
     if p == nil or type(p) ~= "table" then
         return nil
@@ -45,6 +54,7 @@ function players.player_from_api(p)
         steam_id = sid,
         score = tonumber(p.score) or 0,
         elo = parse_elo(p),
+        ahead_on_track = parse_ahead_on_track(p),
     }
 end
 
@@ -125,6 +135,7 @@ function players.player_ui_fields(player)
         car_id = player.car_id,
         role = player.role,
         elo = player.elo,
+        ahead_on_track = player.ahead_on_track,
         placeholder = player.placeholder == true,
     }
 end

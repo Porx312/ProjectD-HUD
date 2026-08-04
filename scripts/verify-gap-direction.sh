@@ -20,8 +20,12 @@ echo "=== Gap direction & animation checks ==="
 
 check 'role == "LEAD"' common/api/battle/battle_phases.lua
 check 'role == "CHASE"' common/api/battle/battle_phases.lua
+check 'ahead_on_track == true' common/api/battle/battle_phases.lua
+check 'ahead_on_track == false' common/api/battle/battle_phases.lua
 check 'signed = abs_m' common/api/battle/battle_phases.lua
 check 'signed = -abs_m' common/api/battle/battle_phases.lua
+check 'ahead_on_track' common/api/battle/battle_players.lua
+check 'aheadOnTrack' common/api/battle/battle_players.lua
 check 'display_meters' common/battle/gap_anim.lua
 check 'disappearGapM' common/api/battle/battle_phases.lua
 
