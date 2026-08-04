@@ -275,6 +275,13 @@ function battle_parse.to_ui(raw, local_steam_id)
         is_lobby = false,
     }
 
+    local battle_id = util.safe_str(ui.battle_id)
+    if battle_id ~= "" and not is_terminal and not battle_players.opponent_missing(opponent) then
+        ui.looking_for_opponent = false
+        ui.show_gap = (is_active or is_armed)
+        ui.show_prep_scores = state_name == "armed"
+    end
+
     return battle_parse.attach_display(ui)
 end
 

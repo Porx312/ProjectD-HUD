@@ -44,7 +44,12 @@ local function center_image_key(ui, phase_state, is_terminal, is_draw)
         if phase_state == "cancelled" then return "cancelled" end
         return nil
     end
-    if ui.is_lobby == true or ui.looking_for_opponent == true then
+    if ui.is_lobby == true then
+        return "matchmaking"
+    end
+    if ui.looking_for_opponent == true
+        and not battle_has_battle_id(ui)
+        and PREP_LIVE[phase_state] ~= true then
         return "matchmaking"
     end
     if phase_state == "arming" or phase_state == "launching" then

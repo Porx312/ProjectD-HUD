@@ -312,6 +312,8 @@ function battle_fetch.apply_snapshot(raw, local_steam_id, now)
             battle_debug("battleId changed -> reset session " .. battle_id)
         end
         state.battle_last_battle_id = battle_id
+        state.battle_no_battle_streak = 0
+        state.snapshot_poll_at = 0
     end
 
     local ui = battle_parse.to_ui(raw, local_steam_id)
@@ -418,6 +420,10 @@ function battle_fetch.handle_battle_clear(payload, now)
         local age = now - snap_at
 
         if ui ~= nil then
+            if not battle_parse.is_terminal_ui(ui) then
+                battle_debug("battle:clear ignored (live battle state=" .. util.safe_str(ui.state) .. ")")
+                return
+            end
             local phase = string.lower(util.safe_str(ui.state))
             if PREP_PHASES[phase] and age < NO_BATTLE_CLEAR_GRACE_SEC then
                 battle_debug("battle:clear ignored (prep grace age=" .. string.format("%.1f", age) .. "s)")
@@ -494,6 +500,7 @@ function battle_fetch.tick_latch(now)
             battle_debug("latch OFF -> lobby")
             clear_battle_cache(false)
             state.battle_last_battle_id = ""
+            state.snapshot_poll_at = 0
         end
     end
 end

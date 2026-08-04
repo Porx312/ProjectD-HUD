@@ -55,7 +55,7 @@ local function poll_interval()
         return config.HUD_SNAPSHOT_BATTLE_POLL_SEC or 2
     end
 
-    if util.safe_str(state.hud_transport) == "poll" and state.cached_bundle ~= nil then
+    if state.battle_ui == nil and state.cached_bundle ~= nil then
         return config.HUD_SNAPSHOT_BATTLE_WAIT_POLL_SEC or 2
     end
 
@@ -71,6 +71,12 @@ local function sse_recently_active(now)
     return last > 0 and (now - last) < poll_interval()
 end
 
+local function needs_battle_poll_backup(now)
+    if state.battle_ui ~= nil then return false end
+    if battle_fetch.is_session_live(now) then return false end
+    return true
+end
+
 local function should_poll(ctx, now)
     if ctx.is_online ~= true then return false end
 
@@ -79,14 +85,16 @@ local function should_poll(ctx, now)
 
     if state.last_error == "user_invalidated" then return false end
 
+    local battle_backup = needs_battle_poll_backup(now)
+
     if state.cached_bundle ~= nil then
-        if battle_sse.is_active() and sse_recently_active(now) then
+        if battle_sse.is_active() and sse_recently_active(now) and not battle_backup then
             return false
         end
         return now >= (state.snapshot_poll_at or 0)
     end
 
-    if battle_sse.is_active() and sse_recently_active(now) then
+    if battle_sse.is_active() and sse_recently_active(now) and not battle_backup then
         return false
     end
 
