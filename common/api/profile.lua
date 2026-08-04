@@ -23,6 +23,11 @@ local SKIP_ABSORB_KEYS = {
     rivals = true,
 }
 
+local COSMETIC_TABLE_KEYS = {
+    display_style = true,
+    displayStyle = true,
+}
+
 local NESTED_ABSORB_KEYS = {
     stats = true,
     player = true,
@@ -516,6 +521,8 @@ local function absorb_fields(into, source, depth)
 
         if type(v) == "table" and NESTED_ABSORB_KEYS[k] then
             absorb_fields(into, v, depth + 1)
+        elseif type(v) == "table" and COSMETIC_TABLE_KEYS[k] then
+            if into[k] == nil then into[k] = v end
         elseif type(v) ~= "table" then
             if into[k] == nil or into[k] == "" then
                 into[k] = v
