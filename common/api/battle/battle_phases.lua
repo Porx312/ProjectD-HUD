@@ -63,6 +63,9 @@ local function center_image_key(ui, phase_state, is_terminal, is_draw)
     if phase_state == "armed" then
         return "vs"
     end
+    if phase_state == "pairing" then
+        return "matchmaking"
+    end
     return nil
 end
 
@@ -77,7 +80,9 @@ local function countdown_label(ui, phase_state)
         return center_text
     end
     if center_text == "GO!" then return center_text end
-    return ""
+    if phase_state == "launching" then return "GO!" end
+    if phase_state == "arming" then return "READY" end
+    return "…"
 end
 
 function phases.arming_countdown_sec(raw)
@@ -138,10 +143,10 @@ function phases.parse_gap(raw, local_player, default_disappear_gap_m)
     local signed = 0
     if role == "LEAD" then
         opponent_ahead = false
-        signed = -abs_m
+        signed = abs_m
     elseif role == "CHASE" then
         opponent_ahead = true
-        signed = abs_m
+        signed = -abs_m
     end
     return {
         current = abs_m,
@@ -190,6 +195,10 @@ function phases.build_display(ui, resolve_winner_display)
     local center_label = ""
     if center_key == "countdown" then
         center_label = countdown_label(ui, phase_state)
+        if center_label == "" or center_label == "…" then
+            local fallback = tostring(ui.center_text or ui.mode or "")
+            if fallback ~= "" then center_label = fallback end
+        end
     end
 
     return {

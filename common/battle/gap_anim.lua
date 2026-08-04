@@ -3,13 +3,16 @@
 local gap_anim = {}
 
 local SMOOTH_HZ = 12
+local METERS_SMOOTH_HZ = 14
 local PULSE_VEL_THRESHOLD = 0.35
 
 local anim = {
     display_ratio = 0,
     display_signed = 0,
+    display_meters = 0,
     target_ratio = 0,
     target_signed = 0,
+    target_meters = 0,
     velocity = 0,
     battle_id = "",
     pulse = 0,
@@ -22,8 +25,10 @@ end
 function gap_anim.reset()
     anim.display_ratio = 0
     anim.display_signed = 0
+    anim.display_meters = 0
     anim.target_ratio = 0
     anim.target_signed = 0
+    anim.target_meters = 0
     anim.velocity = 0
     anim.battle_id = ""
     anim.pulse = 0
@@ -35,13 +40,18 @@ function gap_anim.set_battle_id(battle_id)
     anim.battle_id = battle_id
     anim.display_ratio = 0
     anim.display_signed = 0
+    anim.display_meters = 0
     anim.velocity = 0
     anim.pulse = 0
 end
 
-function gap_anim.set_target(signed, max_m, opponent_ahead)
+function gap_anim.set_target(signed, max_m, opponent_ahead, gap_m)
     max_m = math.max(1, tonumber(max_m) or 250)
-    local abs_m = math.abs(tonumber(signed) or 0)
+    local abs_m = math.max(0, tonumber(gap_m))
+    if abs_m <= 0 then
+        abs_m = math.abs(tonumber(signed) or 0)
+    end
+    anim.target_meters = abs_m
     local ratio = clamp(abs_m / max_m, 0, 1)
 
     if opponent_ahead == nil then
@@ -50,7 +60,7 @@ function gap_anim.set_target(signed, max_m, opponent_ahead)
         return
     end
 
-    local sign = opponent_ahead and 1 or -1
+    local sign = opponent_ahead and -1 or 1
     if signed ~= nil and signed ~= 0 then
         sign = signed > 0 and 1 or -1
     end
@@ -58,17 +68,20 @@ function gap_anim.set_target(signed, max_m, opponent_ahead)
     anim.target_signed = ratio * sign
 end
 
-function gap_anim.tick(dt, signed, max_m, opponent_ahead, battle_id)
+function gap_anim.tick(dt, signed, max_m, opponent_ahead, battle_id, gap_m)
     dt = math.max(0, tonumber(dt) or 0)
     gap_anim.set_battle_id(battle_id)
-    gap_anim.set_target(signed, max_m, opponent_ahead)
+    gap_anim.set_target(signed, max_m, opponent_ahead, gap_m)
 
     local prev = anim.display_signed
     if dt > 0 then
         local alpha = 1 - math.exp(-dt * SMOOTH_HZ)
         anim.display_signed = anim.display_signed + (anim.target_signed - anim.display_signed) * alpha
+        local meters_alpha = 1 - math.exp(-dt * METERS_SMOOTH_HZ)
+        anim.display_meters = anim.display_meters + (anim.target_meters - anim.display_meters) * meters_alpha
     else
         anim.display_signed = anim.target_signed
+        anim.display_meters = anim.target_meters
     end
     anim.display_ratio = math.abs(anim.display_signed)
 
@@ -89,6 +102,7 @@ function gap_anim.tick(dt, signed, max_m, opponent_ahead, battle_id)
     return {
         display_ratio = anim.display_ratio,
         display_signed = anim.display_signed,
+        display_meters = anim.display_meters,
         velocity = anim.velocity,
         pulse = anim.pulse,
         closing = closing,

@@ -146,14 +146,16 @@ function draw_battle_center.draw_block(
     if not is_terminal and phase_state ~= "active" then
         if center_key == "countdown" then
             local label = display.center_label
-            if label ~= "" then
-                local pt = layout.battle_center_point(panel_o, panel_size, d.center_countdown)
-                local fs = phase_label_fs(phase_state, false, label, m, panel_size)
-                if center_image_drawn == true then
-                    draw_text.centered(label, fs, pt, theme.colors.white, theme.fonts.bold)
-                else
-                    draw_phase_label_box(panel_o, panel_size, label, fs, pt, m)
-                end
+            if label == "" or label == "…" then
+                label = tostring(battle.center_text or battle.mode or "")
+            end
+            if label == "" then label = "READY" end
+            local pt = layout.battle_center_point(panel_o, panel_size, d.center_countdown)
+            local fs = phase_label_fs(phase_state, false, label, m, panel_size)
+            if center_image_drawn == true then
+                draw_text.centered(label, fs, pt, theme.colors.white, theme.fonts.bold)
+            else
+                draw_phase_label_box(panel_o, panel_size, label, fs, pt, m)
             end
             if display.show_countdown_hint then
                 local hpt = layout.battle_center_point(panel_o, panel_size, d.countdown_hint)
@@ -178,6 +180,14 @@ function draw_battle_center.draw_block(
                 draw_text.centered(battle.countdown_hint, m.hint_fs, hpt, theme.colors.muted, theme.fonts.medium)
             end
         end
+    end
+
+    if not is_terminal and phase_state ~= "active" and (center_key == nil or center_key == "") then
+        local fallback = center_text ~= "" and center_text or string.upper(phase_state)
+        if fallback == "" or fallback == "PAIRING" then fallback = "LOOKING" end
+        local pt = layout.battle_center_point(panel_o, panel_size, d.center_phase_label)
+        local fs = phase_label_fs(phase_state, false, fallback, m, panel_size)
+        draw_phase_label_box(panel_o, panel_size, fallback, fs, pt, m)
     end
 
     local points_layout = center_key == "points" and center_image_drawn == true

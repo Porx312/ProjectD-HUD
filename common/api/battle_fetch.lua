@@ -149,10 +149,43 @@ local function apply_live_arming_countdown(ui, now)
     if phase == "launching" then
         return apply_go_hold_ui(ui, now)
     end
-    if phase == nil then return ui end
+
+    local phase_name = string.lower(util.safe_str(ui.state))
+    if phase == nil then
+        if phase_name == "arming" or phase_name == "launching" then
+            local fallback_cd = read_arming_cd()
+            local fallback_text = util.safe_str(ui.center_text or ui.mode)
+            if fallback_cd ~= nil or fallback_text ~= "" then
+                local copy = battle_parse.deep_copy_ui(ui)
+                if copy ~= nil then
+                    if fallback_cd ~= nil then
+                        copy.arming_countdown = fallback_cd
+                        copy.center_text = fallback_cd > 0 and tostring(fallback_cd) or "GO!"
+                        copy.mode = copy.center_text
+                    elseif fallback_text ~= "" then
+                        copy.center_text = fallback_text
+                        copy.mode = fallback_text
+                    end
+                    return battle_parse.attach_display(copy)
+                end
+            end
+        end
+        return ui
+    end
 
     local live = live_arming_countdown(now)
-    if live == nil then return ui end
+    if live == nil then
+        local anchored = read_arming_cd()
+        if anchored ~= nil then
+            live = anchored
+        else
+            local center_text = util.safe_str(ui.center_text or ui.mode)
+            if tonumber(center_text) ~= nil then
+                live = tonumber(center_text)
+            end
+        end
+        if live == nil then return ui end
+    end
 
     if live == 0 and string.lower(util.safe_str(ui.state)) == "arming" then
         state.battle_phase_hold_until = now + PHASE_HOLD_SEC

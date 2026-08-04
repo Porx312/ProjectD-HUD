@@ -5,7 +5,7 @@ local M = {}
 --- battle/bg.png ΓÇö canvas nativo del bar (editar posiciones en BATTLE_DESIGN).
 M.BATTLE_NATIVE = vec2(3010, 469)
 M.BATTLE_ASPECT = M.BATTLE_NATIVE.x / M.BATTLE_NATIVE.y
-M.BATTLE_GAP_H = 64
+M.BATTLE_GAP_H = 88
 M.BATTLE_GAP_MARGIN = 0
 M.BATTLE_GAP_MIN_PX = 40
 
@@ -70,7 +70,7 @@ M.BATTLE_DESIGN = {
     --- Horizontal gap bar in bottom strip (full width)
     gap_bar_x_start = 0,
     gap_bar_x_end = 1.0,
-    gap_bar_h_frac = 0.5,
+    gap_bar_h_frac = 0.68,
     gap_label_fs = 14,
 
     --- Pantalla resultado ΓÇö "WIN Nombre" arriba, marcador abajo (sin solaparse)
