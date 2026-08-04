@@ -6,6 +6,7 @@ config.API_BASE_URL = "https://dev-api.projectd.space"
 config.HUD_STREAM_PATH = "/hud/stream"
 config.HUD_SNAPSHOT_PATH = "/hud/snapshot"
 config.HUD_SNAPSHOT_POLL_SEC = 5
+config.HUD_SNAPSHOT_BATTLE_POLL_SEC = 2
 config.HUD_VERSION_PATH = "/hud/version"
 config.HUD_VERSION_POLL_SEC = 5
 config.HUD_SSE_RECONNECT_SEC = 3

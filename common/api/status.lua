@@ -248,6 +248,12 @@ function status.get_status()
 
         last_web_event = util.safe_str(state.last_web_event),
 
+        has_battle = state.battle_ui ~= nil,
+
+        battle_state = util.safe_str(
+            state.battle_ui ~= nil and state.battle_ui.state or state.battle_last_debug_stage
+        ),
+
         battle_snap_at = state.battle_last_snapshot_at or 0,
 
         battle_event_name = util.safe_str(state.battle_last_event_name),

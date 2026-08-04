@@ -36,7 +36,19 @@ local function snapshot_url(ctx)
     )
 end
 
+local function battle_poll_active()
+    if state.battle_ui ~= nil then return true end
+    local snap_at = state.battle_last_snapshot_at or 0
+    if snap_at > 0 then
+        return (os.clock() - snap_at) < (config.HUD_SNAPSHOT_POLL_SEC or 5)
+    end
+    return false
+end
+
 local function poll_interval()
+    if battle_poll_active() then
+        return config.HUD_SNAPSHOT_BATTLE_POLL_SEC or 2
+    end
     return config.HUD_SNAPSHOT_POLL_SEC or 5
 end
 
@@ -89,6 +101,20 @@ local function apply_snapshot_body(raw, steam_id)
     local session = raw.session
     if session ~= nil and type(session) == "table" then
         session_fetch.apply_update(session, steam_id)
+    end
+
+    local battle = raw.battle
+    local now = os.clock()
+    if battle ~= nil and type(battle) == "table" then
+        if battle.ok == false then
+            local reason = util.safe_str(battle.reason)
+            if reason == "no_battle" or reason == "" then
+                battle_fetch.handle_battle_clear(battle, now)
+            end
+        else
+            battle_fetch.apply_snapshot(battle, steam_id, now)
+            battle_fetch.debug("hud snapshot battle state=" .. util.safe_str(battle.state))
+        end
     end
 
     if state.cached_bundle ~= nil then
