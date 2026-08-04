@@ -5,7 +5,7 @@ local M = {}
 --- battle/bg.png ΓÇö canvas nativo del bar (editar posiciones en BATTLE_DESIGN).
 M.BATTLE_NATIVE = vec2(3010, 469)
 M.BATTLE_ASPECT = M.BATTLE_NATIVE.x / M.BATTLE_NATIVE.y
-M.BATTLE_GAP_H = 90
+M.BATTLE_GAP_H = 64
 M.BATTLE_GAP_MARGIN = 0
 M.BATTLE_GAP_MIN_PX = 40
 
@@ -67,12 +67,10 @@ M.BATTLE_DESIGN = {
     countdown_hint = { cx = 0, cy = 0.72 },                -- hint bajo countdown
     center_phase_label = { cx = 0, cy = 0.50, ty = 0 },    -- CANCELLED, ARMEDΓÇª (no pairing)
 
-    --- Vertical gap indicator in bottom strip (centered column)
+    --- Horizontal gap bar in bottom strip (full width)
     gap_bar_x_start = 0,
     gap_bar_x_end = 1.0,
-    gap_indicator_w = 52,
-    gap_indicator_h_frac = 0.72,
-    gap_indicator_center_x = 0.5,
+    gap_bar_h_frac = 0.5,
     gap_label_fs = 14,
 
     --- Pantalla resultado ΓÇö "WIN Nombre" arriba, marcador abajo (sin solaparse)
@@ -177,20 +175,6 @@ function M.battle_gap_rect(bar_origin, bar_size, gap_margin, gap_h, win_origin, 
     local gw = base_w * (x1 - x0)
     local gy = bar_origin.y + bar_size.y + gap_margin
     return vec2(gx, gy), vec2(gw, gap_h)
-end
-
---- Centered vertical indicator column inside the bottom gap strip.
-function M.battle_gap_indicator_rect(bar_origin, bar_size, gap_margin, gap_h, win_origin, win_size, scale)
-    local strip_o, strip_sz = M.battle_gap_rect(bar_origin, bar_size, gap_margin, gap_h, win_origin, win_size)
-    local d = M.BATTLE_DESIGN
-    scale = scale or 1
-    local ind_w = math.max(28, (tonumber(d.gap_indicator_w) or 52) * scale)
-    local h_frac = tonumber(d.gap_indicator_h_frac) or 0.72
-    local ind_h = math.max(40, strip_sz.y * h_frac)
-    local cx_frac = tonumber(d.gap_indicator_center_x) or 0.5
-    local cx = strip_o.x + strip_sz.x * cx_frac
-    local cy = strip_o.y + strip_sz.y * 0.46
-    return vec2(cx - ind_w * 0.5, cy - ind_h * 0.5), vec2(ind_w, ind_h)
 end
 
 --- Convierte slot BATTLE_DESIGN ΓåÆ origen + tama├▒o en p├¡xeles de pantalla.

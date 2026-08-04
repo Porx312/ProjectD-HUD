@@ -1,4 +1,4 @@
---[[ Battle HUD — vertical distance indicator in the bottom gap strip. ]]
+--[[ Battle HUD — horizontal gap bar with lateral opponent dot. ]]
 
 local theme = require("common.theme")
 local layout = require("common.layout")
@@ -7,7 +7,7 @@ local gap_anim = require("common.battle.gap_anim")
 
 local draw_battle_gap = {}
 
-local CORNER = 6
+local CORNER = 5
 
 local function lerp_color(a, b, t)
     t = math.max(0, math.min(1, t))
@@ -19,48 +19,86 @@ local function lerp_color(a, b, t)
     )
 end
 
-local function draw_vertical_gradient_track(origin, size)
+local function compute_bar_layout(strip_o, strip_sz, m, d)
+    local pad_x = math.max(6, 8 * m.scale)
+    local label_fs = math.max(
+        tonumber(d.gap_label_fs) or 14,
+        11 * m.scale,
+        strip_sz.y * 0.16
+    )
+    local you_fs = math.max(8, label_fs * 0.72)
+    local meters_h = label_fs + math.max(3, 4 * m.scale)
+    local you_h = you_fs + math.max(2, 3 * m.scale)
+    local h_frac = tonumber(d.gap_bar_h_frac) or 0.5
+    local bar_h = math.max(10, (strip_sz.y - meters_h - you_h) * h_frac)
+    local bar_y = strip_o.y + you_h + math.max(0, (strip_sz.y - you_h - meters_h - bar_h) * 0.35)
+    local bar_o = vec2(strip_o.x + pad_x, bar_y)
+    local bar_sz = vec2(math.max(40, strip_sz.x - pad_x * 2), bar_h)
+    return {
+        bar_o = bar_o,
+        bar_sz = bar_sz,
+        label_fs = label_fs,
+        you_fs = you_fs,
+        meters_y = strip_o.y + strip_sz.y - meters_h * 0.35,
+        you_y = strip_o.y + you_fs * 0.55,
+    }
+end
+
+local function draw_horizontal_track(bar_o, bar_sz)
     local green = theme.colors.battle_gap_green
     local red = theme.colors.battle_gap_red
     local track = theme.colors.battle_gap_track
-    local half_h = size.y * 0.5
-    local center_y = origin.y + half_h
+    local mid_x = bar_o.x + bar_sz.x * 0.5
 
     ui.drawRectFilled(
-        origin - vec2(2, 2),
-        origin + size + vec2(2, 2),
+        bar_o - vec2(2, 2),
+        bar_o + bar_sz + vec2(2, 2),
         rgbm(1, 1, 1, 0.04),
         CORNER + 2,
         layout.corners_all()
     )
 
-    ui.drawRectFilled(origin, origin + size, track, CORNER, layout.corners_all())
+    ui.drawRectFilled(bar_o, bar_o + bar_sz, track, CORNER, layout.corners_all())
 
-    local top_o = origin
-    local top_sz = vec2(size.x, half_h)
-    local bot_o = vec2(origin.x, center_y)
-    local bot_sz = vec2(size.x, half_h)
+    ui.drawRectFilled(
+        bar_o,
+        vec2(mid_x, bar_o.y + bar_sz.y),
+        lerp_color(track, red, 0.52),
+        CORNER,
+        layout.corners_all()
+    )
+    ui.drawRectFilled(
+        vec2(mid_x, bar_o.y),
+        bar_o + bar_sz,
+        lerp_color(track, red, 0.52),
+        CORNER,
+        layout.corners_all()
+    )
 
-    ui.drawRectFilled(top_o, top_o + top_sz, lerp_color(track, red, 0.55), CORNER, layout.corners_all())
-    ui.drawRectFilled(bot_o, bot_o + bot_sz, lerp_color(track, green, 0.55), CORNER, layout.corners_all())
+    local glow_w = math.max(6, bar_sz.x * 0.06)
+    ui.drawRectFilled(
+        vec2(mid_x - glow_w * 0.5, bar_o.y),
+        vec2(mid_x + glow_w * 0.5, bar_o.y + bar_sz.y),
+        lerp_color(track, green, 0.65),
+        3,
+        layout.corners_all()
+    )
 end
 
-local function draw_center_marker(origin, size, fs, m)
-    local cx = origin.x + size.x * 0.5
-    local cy = origin.y + size.y * 0.5
-    local tick_w = math.max(10, size.x * 0.85)
-    local tick_h = math.max(1.5, 2 * m.scale)
+local function draw_you_marker(bar_o, bar_sz, you_y, you_fs)
+    local cx = bar_o.x + bar_sz.x * 0.5
+    local tick_h = bar_sz.y + math.max(4, 6)
+    local tick_w = math.max(2, 2.5)
     ui.drawRectFilled(
-        vec2(cx - tick_w * 0.5, cy - tick_h * 0.5),
-        vec2(cx + tick_w * 0.5, cy + tick_h * 0.5),
+        vec2(cx - tick_w * 0.5, bar_o.y + (bar_sz.y - tick_h) * 0.5),
+        vec2(cx + tick_w * 0.5, bar_o.y + (bar_sz.y + tick_h) * 0.5),
         theme.colors.battle_gap_center
     )
     theme.ensure_fonts()
-    local label_fs = math.max(8, fs * 0.72)
-    draw_text.centered("YOU", label_fs, vec2(cx, cy + label_fs * 0.85), theme.colors.muted, theme.fonts.bold)
+    draw_text.centered("YOU", you_fs, vec2(cx, you_y), theme.colors.muted, theme.fonts.bold)
 end
 
-local function opponent_arrow_color(anim_state)
+local function opponent_dot_color(anim_state)
     if anim_state.closing then
         return theme.colors.battle_gap_closing
     end
@@ -70,32 +108,40 @@ local function opponent_arrow_color(anim_state)
     return theme.colors.battle_gap_opponent
 end
 
-local function draw_opponent_arrow(origin, size, anim_state, arrow_fs, m)
-    local cx = origin.x + size.x * 0.5
-    local cy = origin.y + size.y * 0.5
-    local travel = size.y * 0.45
+local function draw_opponent_dot(bar_o, bar_sz, anim_state, m)
+    local cx = bar_o.x + bar_sz.x * 0.5
+    local cy = bar_o.y + bar_sz.y * 0.5
+    local pad = math.max(4, 5 * m.scale)
+    local travel = (bar_sz.x * 0.5 - pad) * 0.9
     local signed = anim_state.display_signed or 0
-    local arrow_y = cy - signed * travel
+    local dot_x = cx + signed * travel
 
     local pulse = anim_state.pulse or 0
-    local scale = 1 + pulse * 0.12
-    local fs = arrow_fs * scale
-    local color = opponent_arrow_color(anim_state)
-    local glyph = "▲"
-    if signed < -0.001 then
-        glyph = "▼"
-    end
+    local pill_h = bar_sz.y * (0.58 + pulse * 0.08)
+    local pill_w = math.max(pill_h * 1.35, pill_h + 4 * m.scale)
+    local color = opponent_dot_color(anim_state)
 
-    theme.ensure_fonts()
-    draw_text.centered(glyph, fs, vec2(cx, arrow_y), color, theme.fonts.bold)
+    ui.drawRectFilled(
+        vec2(dot_x - pill_w * 0.5, cy - pill_h * 0.5),
+        vec2(dot_x + pill_w * 0.5, cy + pill_h * 0.5),
+        rgbm(color.r, color.g, color.b, math.min(1, color.mult * 0.35)),
+        pill_h * 0.5,
+        layout.corners_all()
+    )
+    ui.drawRectFilled(
+        vec2(dot_x - pill_w * 0.5, cy - pill_h * 0.5),
+        vec2(dot_x + pill_w * 0.5, cy + pill_h * 0.5),
+        color,
+        pill_h * 0.5,
+        layout.corners_all()
+    )
 end
 
-local function draw_meters_label(origin, size, gap_m, fs, m)
-    local cx = origin.x + size.x * 0.5
-    local label_y = origin.y + size.y + math.max(4, 5 * m.scale)
+local function draw_meters_label(bar_o, bar_sz, gap_m, label_fs, meters_y)
+    local cx = bar_o.x + bar_sz.x * 0.5
     local label = string.format("%dm", math.floor(gap_m + 0.5))
     theme.ensure_fonts()
-    draw_text.centered(label, fs, vec2(cx, label_y), theme.colors.white, theme.fonts.bold)
+    draw_text.centered(label, label_fs, vec2(cx, meters_y), theme.colors.white, theme.fonts.bold)
 end
 
 function draw_battle_gap.draw_layer(bar_origin, bar_size, gap_margin, gap_h, battle, m, win_origin, win_size, dt)
@@ -115,21 +161,16 @@ function draw_battle_gap.draw_layer(bar_origin, bar_size, gap_margin, gap_h, bat
 
     local anim_state = gap_anim.tick(dt, signed, gap_max, opponent_ahead, battle.battle_id)
 
-    local origin, size = layout.battle_gap_indicator_rect(
-        bar_origin, bar_size, gap_margin, gap_h, win_origin, win_size, m.scale
+    local strip_o, strip_sz = layout.battle_gap_rect(
+        bar_origin, bar_size, gap_margin, gap_h, win_origin, win_size
     )
     local d = m.design or layout.BATTLE_DESIGN
-    local label_fs = math.max(
-        tonumber(d.gap_label_fs) or 14,
-        11 * m.scale,
-        size.y * 0.14
-    )
-    local arrow_fs = math.max(label_fs * 1.35, size.x * 0.95, 14)
+    local L = compute_bar_layout(strip_o, strip_sz, m, d)
 
-    draw_vertical_gradient_track(origin, size)
-    draw_center_marker(origin, size, label_fs, m)
-    draw_opponent_arrow(origin, size, anim_state, arrow_fs, m)
-    draw_meters_label(origin, size, gap_current, label_fs, m)
+    draw_horizontal_track(L.bar_o, L.bar_sz)
+    draw_you_marker(L.bar_o, L.bar_sz, L.you_y, L.you_fs)
+    draw_opponent_dot(L.bar_o, L.bar_sz, anim_state, m)
+    draw_meters_label(L.bar_o, L.bar_sz, gap_current, L.label_fs, L.meters_y)
 end
 
 return draw_battle_gap
