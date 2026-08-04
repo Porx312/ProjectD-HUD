@@ -54,6 +54,9 @@ local function center_image_key(ui, phase_state, is_terminal, is_draw)
     if phase_state == "pairing" and cd ~= nil and cd > 0 then
         return "countdown"
     end
+    if phase_state == "arming" and cd ~= nil and cd == 0 then
+        return "countdown"
+    end
     if phase_state == "active" then
         return "points"
     end
@@ -67,7 +70,7 @@ local function countdown_label(ui, phase_state)
     local cd = tonumber(ui.arming_countdown)
     if cd ~= nil and cd >= 0 then
         if cd > 0 then return tostring(math.floor(cd + 0.5)) end
-        if phase_state == "launching" then return "GO!" end
+        if phase_state == "launching" or phase_state == "arming" then return "GO!" end
     end
     local center_text = tostring(ui.center_text or ui.mode or "")
     if center_text ~= "" and tonumber(center_text) ~= nil then

@@ -4,13 +4,19 @@ local config = require("common.config")
 local state = require("common.api.state")
 local util = require("common.api.util")
 local steam = require("common.api.steam")
-local context = require("common.api.context")
 local web_queue = require("common.api.web_queue")
 local session_fetch = require("common.api.session_fetch")
 local battle_fetch = require("common.api.battle_fetch")
 local battle_sse = require("common.api.battle_sse")
 
 local session_snapshot = {}
+
+local PREP_PHASES = {
+    pairing = true,
+    arming = true,
+    armed = true,
+    launching = true,
+}
 
 local API_KEY_STORAGE = ac.storage("ProjectD-HUD:api_key", "")
 
@@ -36,20 +42,28 @@ local function snapshot_url(ctx)
     )
 end
 
-local function battle_poll_active()
-    if state.battle_ui ~= nil then return true end
-    local snap_at = state.battle_last_snapshot_at or 0
-    if snap_at > 0 then
-        return (os.clock() - snap_at) < (config.HUD_SNAPSHOT_POLL_SEC or 5)
-    end
-    return false
-end
-
 local function poll_interval()
-    if battle_poll_active() then
+    local ui = state.battle_ui
+    if ui ~= nil then
+        local phase = string.lower(util.safe_str(ui.state))
+        if PREP_PHASES[phase] then
+            return config.HUD_SNAPSHOT_PREP_POLL_SEC or 1
+        end
+        if phase == "active" then
+            return config.HUD_SNAPSHOT_BATTLE_POLL_SEC or 2
+        end
         return config.HUD_SNAPSHOT_BATTLE_POLL_SEC or 2
     end
+
+    if util.safe_str(state.hud_transport) == "poll" and state.cached_bundle ~= nil then
+        return config.HUD_SNAPSHOT_BATTLE_WAIT_POLL_SEC or 2
+    end
+
     return config.HUD_SNAPSHOT_POLL_SEC or 5
+end
+
+function session_snapshot.poll_interval_sec()
+    return poll_interval()
 end
 
 local function sse_recently_active(now)
@@ -106,6 +120,7 @@ local function apply_snapshot_body(raw, steam_id)
     local battle = raw.battle
     local now = os.clock()
     if battle ~= nil and type(battle) == "table" then
+        local had_battle = state.battle_ui ~= nil
         if battle.ok == false then
             local reason = util.safe_str(battle.reason)
             if reason == "no_battle" or reason == "" then
@@ -114,6 +129,9 @@ local function apply_snapshot_body(raw, steam_id)
         else
             battle_fetch.apply_snapshot(battle, steam_id, now)
             battle_fetch.debug("hud snapshot battle state=" .. util.safe_str(battle.state))
+            if not had_battle and state.battle_ui ~= nil then
+                state.snapshot_poll_at = 0
+            end
         end
     end
 
@@ -126,7 +144,9 @@ end
 
 local function on_snapshot_response(err, response, ctx)
     state.snapshot_inflight = false
-    state.snapshot_poll_at = os.clock() + poll_interval()
+    local interval = poll_interval()
+    state.snapshot_poll_interval_sec = interval
+    state.snapshot_poll_at = os.clock() + interval
 
     if util.is_web_error(err) then
         state.last_error = "network_error"
@@ -165,7 +185,9 @@ function session_snapshot.tick(ctx, now)
     if not should_poll(ctx, now) then return end
 
     state.snapshot_inflight = true
-    state.snapshot_poll_at = now + poll_interval()
+    local interval = poll_interval()
+    state.snapshot_poll_interval_sec = interval
+    state.snapshot_poll_at = now + interval
     local url = snapshot_url(ctx)
     state.last_fetch_url = url
     state.last_fetch_kind = "hud_snapshot"
@@ -179,6 +201,7 @@ end
 function session_snapshot.reset()
     state.snapshot_poll_at = 0
     state.snapshot_inflight = false
+    state.snapshot_poll_interval_sec = config.HUD_SNAPSHOT_POLL_SEC or 5
     if state.hud_transport == "poll" then
         state.hud_transport = ""
     end

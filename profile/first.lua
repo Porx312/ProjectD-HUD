@@ -32,7 +32,7 @@ local function transport_status_line()
         steam = "..." .. steam:sub(-6)
     end
     return string.format(
-        "mode=%s evt=%s wait=%s bundle=%s profile=%s battle=%s battle_state=%s err=%s web=%s steam=%s",
+        "mode=%s evt=%s wait=%s bundle=%s profile=%s battle=%s battle_state=%s poll_sec=%s synthetic=%s err=%s web=%s steam=%s",
         transport_mode(st),
         tostring(st.battle_event_name or ""),
         tostring(st.hud_waiting_reason or ""),
@@ -40,6 +40,8 @@ local function transport_status_line()
         st.has_profile and "y" or "n",
         st.has_battle and "y" or "n",
         util.safe_str(st.battle_state) ~= "" and st.battle_state or "-",
+        tostring(st.snapshot_poll_sec or "-"),
+        st.synthetic_lobby and "y" or "n",
         err ~= "" and err or "-",
         web ~= "" and web or "-",
         steam ~= "" and steam or "-"

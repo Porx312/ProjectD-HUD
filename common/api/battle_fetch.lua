@@ -10,6 +10,22 @@ local battle_fetch = {}
 
 local DEBUG_STORAGE = ac.storage("ProjectD-HUD:battle_debug", false)
 
+local PREP_PHASES = {
+    pairing = true,
+    arming = true,
+    armed = true,
+    launching = true,
+}
+
+local COUNTDOWN_PHASES = {
+    arming = true,
+    pairing = true,
+}
+
+local PHASE_HOLD_SEC = 1.5
+local NO_BATTLE_CLEAR_GRACE_SEC = 4
+local NO_BATTLE_CLEAR_STREAK = 2
+
 local function battle_debug(msg)
     if DEBUG_STORAGE:get() == true then
         ac.debug("ProjectD-HUD battle", util.safe_str(msg))
@@ -34,6 +50,7 @@ local function reset_arming_countdown_anchor()
     ensure_battle_runtime()
     state.battle_last_arming_cd = nil
     state.battle_prep_cd1_since = 0
+    state.battle_cd_received_at = 0
     if state.battle_runtime ~= nil then
         state.battle_runtime.arming_cd = nil
         state.battle_runtime.arming_since = 0
@@ -43,10 +60,22 @@ end
 local function sync_arming_runtime(cd, since)
     state.battle_last_arming_cd = cd
     state.battle_prep_cd1_since = since
+    state.battle_cd_received_at = since
     if state.battle_runtime ~= nil then
         state.battle_runtime.arming_cd = cd
         state.battle_runtime.arming_since = since
     end
+end
+
+local function countdown_phase(ui)
+    if ui == nil then return nil end
+    local phase = string.lower(util.safe_str(ui.state))
+    if COUNTDOWN_PHASES[phase] then
+        local cd = tonumber(ui.arming_countdown)
+        if cd ~= nil and cd >= 0 then return phase end
+    end
+    if phase == "launching" then return phase end
+    return nil
 end
 
 local function read_arming_cd()
@@ -63,46 +92,75 @@ local function read_arming_since()
     return state.battle_prep_cd1_since or 0
 end
 
---- Server SSE may arrive slower on some VPS; tick arming countdown locally between snapshots.
+--- Re-anchor countdown from each poll snapshot; interpolate locally between polls.
 local function sync_arming_countdown_anchor(ui, now)
     now = now or os.clock()
-    if ui == nil or ui.state ~= "arming" then
-        reset_arming_countdown_anchor()
+    local phase = countdown_phase(ui)
+    if phase == nil then
+        if string.lower(util.safe_str(ui and ui.state)) ~= "launching" then
+            reset_arming_countdown_anchor()
+        end
         return
     end
 
     local cd = tonumber(ui.arming_countdown)
-    if cd == nil then return end
+    if cd == nil and phase ~= "launching" then return end
 
-    local prev = read_arming_cd()
-    if prev ~= cd or read_arming_since() <= 0 then
-        sync_arming_runtime(cd, now)
-        battle_debug("arming cd anchor " .. tostring(cd))
-    end
+    sync_arming_runtime(cd or 0, now)
+    battle_debug("arming cd anchor " .. tostring(cd))
 end
 
 local function live_arming_countdown(now)
     local base = read_arming_cd()
-    local since = read_arming_since()
+    local since = state.battle_cd_received_at or 0
+    if since <= 0 then since = read_arming_since() end
     if base == nil or since <= 0 then return nil end
     local elapsed = math.max(0, (now or os.clock()) - since)
     return math.max(0, math.floor(base - elapsed + 0.0001))
 end
 
-local function apply_live_arming_countdown(ui, now)
-    if ui == nil or ui.state ~= "arming" then return ui end
+local function apply_go_hold_ui(ui, now)
+    local copy = battle_parse.deep_copy_ui(ui)
+    if copy == nil then return ui end
+    copy.arming_countdown = 0
+    copy.center_text = "GO!"
+    copy.mode = "GO!"
+    if string.lower(util.safe_str(copy.state)) == "arming" then
+        copy.state = "launching"
+    end
+    return battle_parse.attach_display(copy)
+end
 
+local function apply_live_arming_countdown(ui, now)
+    if ui == nil then return ui end
     now = now or os.clock()
+
+    local hold_until = state.battle_phase_hold_until or 0
+    if hold_until > 0 and now < hold_until then
+        local phase = string.lower(util.safe_str(ui.state))
+        if phase == "armed" or phase == "launching" or phase == "active" then
+            state.battle_phase_hold_until = 0
+        else
+            return apply_go_hold_ui(ui, now)
+        end
+    end
+
+    local phase = countdown_phase(ui)
+    if phase == "launching" then
+        return apply_go_hold_ui(ui, now)
+    end
+    if phase == nil then return ui end
+
     local live = live_arming_countdown(now)
     if live == nil then return ui end
 
-    local server_cd = tonumber(ui.arming_countdown)
-    if server_cd ~= nil then
-        live = math.min(live, math.max(0, math.floor(server_cd + 0.0001)))
+    if live == 0 and string.lower(util.safe_str(ui.state)) == "arming" then
+        state.battle_phase_hold_until = now + PHASE_HOLD_SEC
+        return apply_go_hold_ui(ui, now)
     end
 
-    local center = live > 0 and tostring(live) or "READY"
-    if live == server_cd and center == tostring(ui.center_text or ui.mode or "") then
+    local center = live > 0 and tostring(live) or "GO!"
+    if center == tostring(ui.center_text or ui.mode or "") and live == tonumber(ui.arming_countdown) then
         return ui
     end
 
@@ -259,6 +317,8 @@ function battle_fetch.apply_snapshot(raw, local_steam_id, now)
 
     state.battle_last_snapshot_at = now
     state.battle_last_error = nil
+    state.battle_no_battle_streak = 0
+    state.battle_phase_hold_until = 0
     if state.battle_runtime ~= nil then
         state.battle_runtime.last_snapshot_version = util.safe_str(raw.version)
         state.battle_runtime.last_snapshot_state = util.safe_str(ui.state)
@@ -317,6 +377,28 @@ function battle_fetch.handle_battle_clear(payload, now)
     end
     local reason = payload ~= nil and util.safe_str(payload.reason) or "no_battle"
     if reason == "no_battle" or payload == nil then
+        local streak = (state.battle_no_battle_streak or 0) + 1
+        state.battle_no_battle_streak = streak
+
+        local ui = state.battle_ui
+        local snap_at = state.battle_last_snapshot_at or 0
+        local age = now - snap_at
+
+        if ui ~= nil then
+            local phase = string.lower(util.safe_str(ui.state))
+            if PREP_PHASES[phase] and age < NO_BATTLE_CLEAR_GRACE_SEC then
+                battle_debug("battle:clear ignored (prep grace age=" .. string.format("%.1f", age) .. "s)")
+                return
+            end
+        end
+
+        if streak < NO_BATTLE_CLEAR_STREAK and age < NO_BATTLE_CLEAR_GRACE_SEC then
+            battle_debug("battle:clear ignored (streak=" .. tostring(streak) .. ")")
+            return
+        end
+
+        state.battle_no_battle_streak = 0
+        state.battle_phase_hold_until = 0
         clear_idle_battle_state(now)
         state.battle_last_error = nil
         battle_debug("battle:clear -> idle")
@@ -393,6 +475,9 @@ function battle_fetch.reset()
     state.battle_last_event_ts = 0
     state.battle_event_shown_at = 0
     state.battle_last_snapshot_at = 0
+    state.battle_no_battle_streak = 0
+    state.battle_phase_hold_until = 0
+    state.battle_cd_received_at = 0
     if state.battle_runtime ~= nil then
         state.battle_runtime.last_snapshot_version = ""
         state.battle_runtime.last_snapshot_state = ""

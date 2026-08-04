@@ -191,8 +191,11 @@ function api.get_battle()
     local prof = api.get_player_profile()
     if prof == nil then return nil end
 
-    -- Poll-only transport: no synthetic LOOKING lobby (telemetry battle comes via snapshot).
+    -- Poll idle: synthetic LOOKING lobby (is_synthetic_lobby=true) until real battle snapshot.
     if util.safe_str(state.hud_transport) == "poll" then
+        if state.battle_ui == nil then
+            return battle_parse.lobby_from_profile(prof)
+        end
         return nil
     end
 

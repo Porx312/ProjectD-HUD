@@ -74,6 +74,11 @@ local function create_state()
 
         snapshot_poll_at = 0,
         snapshot_inflight = false,
+        snapshot_poll_interval_sec = 5,
+
+        battle_cd_received_at = 0,
+        battle_no_battle_streak = 0,
+        battle_phase_hold_until = 0,
 
         battle_last_event_name = "",
         battle_last_sse_summary = "",
