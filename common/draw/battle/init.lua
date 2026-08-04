@@ -91,7 +91,8 @@ function draw_battle.battle_block(panel_o, panel_size, battle, opts)
         battle,
         m,
         opts.win_origin,
-        opts.win_size
+        opts.win_size,
+        opts.dt
     )
 end
 

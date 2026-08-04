@@ -98,6 +98,7 @@ function mod.main(dt)
         gap_h = gap_h,
         win_origin = win_origin,
         win_size = win_size,
+        dt = dt,
     })
 end
 

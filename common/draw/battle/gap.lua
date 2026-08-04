@@ -1,101 +1,135 @@
---[[ Battle HUD — 3D gap bar below the main battle panel. ]]
+--[[ Battle HUD — vertical distance indicator in the bottom gap strip. ]]
 
 local theme = require("common.theme")
 local layout = require("common.layout")
-local images = require("common.images")
 local draw_text = require("common.draw_text")
+local gap_anim = require("common.battle.gap_anim")
 
 local draw_battle_gap = {}
 
-local function draw_rect_bar(tl, size, color)
-    if size.x <= 0 or size.y <= 0 then return end
-    ui.drawRectFilled(tl, tl + size, color)
-end
+local CORNER = 6
 
-local function gap_fill_color(ratio)
-    ratio = math.max(0, math.min(1, ratio))
-    local safe = theme.colors.battle_gap_safe or rgbm(0.18, 0.72, 0.38, 0.95)
-    local danger = theme.colors.battle_gap_fill
-    local t = ratio * ratio
+local function lerp_color(a, b, t)
+    t = math.max(0, math.min(1, t))
     return rgbm(
-        safe.r + (danger.r - safe.r) * t,
-        safe.g + (danger.g - safe.g) * t,
-        safe.b + (danger.b - safe.b) * t,
-        safe.mult + (danger.mult - safe.mult) * t
+        a.r + (b.r - a.r) * t,
+        a.g + (b.g - a.g) * t,
+        a.b + (b.b - a.b) * t,
+        a.mult + (b.mult - a.mult) * t
     )
 end
 
-local function draw_gap_label(text, fs, point)
-    theme.ensure_fonts()
-    local font = theme.fonts.bold
-    local shadow = rgbm(0, 0, 0, 0.88)
-    local offset = math.max(1, fs * 0.07)
-    draw_text.centered(text, fs, point + vec2(offset, offset), shadow, font)
-    draw_text.centered(text, fs, point + vec2(-offset * 0.6, offset * 0.6), shadow, font)
-    draw_text.centered(text, fs, point, rgbm(1, 1, 1, 1), font)
+local function draw_vertical_gradient_track(origin, size)
+    local green = theme.colors.battle_gap_green
+    local red = theme.colors.battle_gap_red
+    local track = theme.colors.battle_gap_track
+    local half_h = size.y * 0.5
+    local center_y = origin.y + half_h
+
+    ui.drawRectFilled(
+        origin - vec2(2, 2),
+        origin + size + vec2(2, 2),
+        rgbm(1, 1, 1, 0.04),
+        CORNER + 2,
+        layout.corners_all()
+    )
+
+    ui.drawRectFilled(origin, origin + size, track, CORNER, layout.corners_all())
+
+    local top_o = origin
+    local top_sz = vec2(size.x, half_h)
+    local bot_o = vec2(origin.x, center_y)
+    local bot_sz = vec2(size.x, half_h)
+
+    ui.drawRectFilled(top_o, top_o + top_sz, lerp_color(track, red, 0.55), CORNER, layout.corners_all())
+    ui.drawRectFilled(bot_o, bot_o + bot_sz, lerp_color(track, green, 0.55), CORNER, layout.corners_all())
 end
 
-function draw_battle_gap.draw_layer(bar_origin, bar_size, gap_margin, gap_h, battle, m, win_origin, win_size)
-    if battle.show_gap ~= true or gap_h <= 0 then return end
+local function draw_center_marker(origin, size, fs, m)
+    local cx = origin.x + size.x * 0.5
+    local cy = origin.y + size.y * 0.5
+    local tick_w = math.max(10, size.x * 0.85)
+    local tick_h = math.max(1.5, 2 * m.scale)
+    ui.drawRectFilled(
+        vec2(cx - tick_w * 0.5, cy - tick_h * 0.5),
+        vec2(cx + tick_w * 0.5, cy + tick_h * 0.5),
+        theme.colors.battle_gap_center
+    )
+    theme.ensure_fonts()
+    local label_fs = math.max(8, fs * 0.72)
+    draw_text.centered("YOU", label_fs, vec2(cx, cy + label_fs * 0.85), theme.colors.muted, theme.fonts.bold)
+end
+
+local function opponent_arrow_color(anim_state)
+    if anim_state.closing then
+        return theme.colors.battle_gap_closing
+    end
+    if math.abs(anim_state.velocity or 0) > 0.08 and not anim_state.closing then
+        return theme.colors.battle_gap_opening
+    end
+    return theme.colors.battle_gap_opponent
+end
+
+local function draw_opponent_arrow(origin, size, anim_state, arrow_fs, m)
+    local cx = origin.x + size.x * 0.5
+    local cy = origin.y + size.y * 0.5
+    local travel = size.y * 0.45
+    local signed = anim_state.display_signed or 0
+    local arrow_y = cy - signed * travel
+
+    local pulse = anim_state.pulse or 0
+    local scale = 1 + pulse * 0.12
+    local fs = arrow_fs * scale
+    local color = opponent_arrow_color(anim_state)
+    local glyph = "▲"
+    if signed < -0.001 then
+        glyph = "▼"
+    end
+
+    theme.ensure_fonts()
+    draw_text.centered(glyph, fs, vec2(cx, arrow_y), color, theme.fonts.bold)
+end
+
+local function draw_meters_label(origin, size, gap_m, fs, m)
+    local cx = origin.x + size.x * 0.5
+    local label_y = origin.y + size.y + math.max(4, 5 * m.scale)
+    local label = string.format("%dm", math.floor(gap_m + 0.5))
+    theme.ensure_fonts()
+    draw_text.centered(label, fs, vec2(cx, label_y), theme.colors.white, theme.fonts.bold)
+end
+
+function draw_battle_gap.draw_layer(bar_origin, bar_size, gap_margin, gap_h, battle, m, win_origin, win_size, dt)
+    if battle.show_gap ~= true or gap_h <= 0 then
+        gap_anim.reset()
+        return
+    end
+
+    dt = tonumber(dt) or 0
 
     local gap = battle.gap or {}
     local gap_current = math.max(0, tonumber(gap.current or battle.gap3d_m) or 0)
     local gap_max = math.max(1, tonumber(gap.max or battle.disappear_gap_m) or 250)
-    local gap_ratio = math.min(1, gap_current / gap_max)
+    local signed = tonumber(gap.signed)
+    if signed == nil then signed = 0 end
+    local opponent_ahead = gap.opponent_ahead
 
-    local origin, size = layout.battle_gap_rect(bar_origin, bar_size, gap_margin, gap_h, win_origin, win_size)
+    local anim_state = gap_anim.tick(dt, signed, gap_max, opponent_ahead, battle.battle_id)
+
+    local origin, size = layout.battle_gap_indicator_rect(
+        bar_origin, bar_size, gap_margin, gap_h, win_origin, win_size, m.scale
+    )
     local d = m.design or layout.BATTLE_DESIGN
-    local pad = math.max(0, (tonumber(d.gap_bar_pad) or 0) * m.scale)
+    local label_fs = math.max(
+        tonumber(d.gap_label_fs) or 14,
+        11 * m.scale,
+        size.y * 0.14
+    )
+    local arrow_fs = math.max(label_fs * 1.35, size.x * 0.95, 14)
 
-    local bar_asset = images.get_battle_gap_bar()
-    local track = images.get_battle_gap_track()
-    local fill_tex = images.get_battle_gap_fill()
-
-    if bar_asset ~= nil then
-        ui.drawImage(bar_asset, origin, origin + size, rgbm(1, 1, 1, 1))
-        if gap_ratio > 0 then
-            local fill_w = math.max(4, size.x * gap_ratio)
-            ui.pushClipRect(origin, origin + vec2(fill_w, size.y))
-            if fill_tex ~= nil then
-                ui.drawImage(fill_tex, origin, origin + size, rgbm(1, 1, 1, 1))
-            else
-                draw_rect_bar(
-                    origin + vec2(pad, pad),
-                    vec2(size.x - pad * 2, size.y - pad * 2),
-                    gap_fill_color(gap_ratio)
-                )
-            end
-            ui.popClipRect()
-        end
-    elseif track ~= nil then
-        ui.drawImage(track, origin, origin + size, rgbm(1, 1, 1, 1))
-        if fill_tex ~= nil and gap_ratio > 0 then
-            local fill_w = math.max(4, size.x * gap_ratio)
-            ui.drawImage(fill_tex, origin, vec2(origin.x + fill_w, origin.y + size.y), rgbm(1, 1, 1, 1))
-        elseif gap_ratio > 0 then
-            local fill_w = math.max(4, size.x * gap_ratio)
-            ui.pushClipRect(origin, origin + vec2(fill_w, size.y))
-            draw_rect_bar(
-                origin + vec2(pad, pad),
-                vec2(size.x - pad * 2, size.y - pad * 2),
-                gap_fill_color(gap_ratio)
-            )
-            ui.popClipRect()
-        end
-    else
-        draw_rect_bar(origin, size, theme.colors.battle_gap_track)
-        if gap_ratio > 0 then
-            local inner = vec2(size.x - pad * 2, size.y - pad * 2)
-            local fill_w = math.max(2, inner.x * gap_ratio)
-            ui.pushClipRect(origin, origin + vec2(pad + fill_w + pad, size.y))
-            draw_rect_bar(origin + vec2(pad, pad), vec2(fill_w, inner.y), gap_fill_color(gap_ratio))
-            ui.popClipRect()
-        end
-    end
-
-    local label = string.format("%dm / %dm", math.floor(gap_current + 0.5), math.floor(gap_max + 0.5))
-    local label_fs = math.max(m.gap_label_fs or 0, m.distance_fs * 1.4, size.y * 0.62, 13)
-    draw_gap_label(label, label_fs, vec2(origin.x + size.x * 0.5, origin.y + size.y * 0.5))
+    draw_vertical_gradient_track(origin, size)
+    draw_center_marker(origin, size, label_fs, m)
+    draw_opponent_arrow(origin, size, anim_state, arrow_fs, m)
+    draw_meters_label(origin, size, gap_current, label_fs, m)
 end
 
 return draw_battle_gap

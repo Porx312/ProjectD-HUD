@@ -193,7 +193,7 @@ function battle_parse.to_ui(raw, local_steam_id)
     local last_event = resolve_last_event(raw)
     local event_ts = event_ts_from_entry(last_event)
     local end_label = util.safe_str(raw.endLabel or raw.end_label)
-    local gap = battle_phases.parse_gap(raw, DEFAULT_DISAPPEAR_GAP_M)
+    local gap = battle_phases.parse_gap(raw, local_player, DEFAULT_DISAPPEAR_GAP_M)
     local is_active = state_name == "active"
     local is_armed = state_name == "armed"
     local is_draw = status_name == "draw"

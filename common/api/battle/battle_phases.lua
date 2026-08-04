@@ -125,16 +125,29 @@ function phases.center_text_for(state_name, status_name, arming_countdown, local
     return string.upper(state_name)
 end
 
-function phases.parse_gap(raw, default_disappear_gap_m)
+function phases.parse_gap(raw, local_player, default_disappear_gap_m)
     local gap3d = tonumber(raw.gap3dM or raw.gap_3d_m or raw.gap3d_m)
     local disappear = tonumber(raw.disappearGapM or raw.disappear_gap_m or raw.disappear_gap_m)
     if disappear == nil or disappear <= 0 then
         disappear = default_disappear_gap_m or 250
     end
     if gap3d == nil then gap3d = 0 end
+    local abs_m = math.max(0, gap3d)
+    local role = string.upper(util.safe_str(local_player and local_player.role))
+    local opponent_ahead = nil
+    local signed = 0
+    if role == "LEAD" then
+        opponent_ahead = false
+        signed = -abs_m
+    elseif role == "CHASE" then
+        opponent_ahead = true
+        signed = abs_m
+    end
     return {
-        current = math.max(0, gap3d),
+        current = abs_m,
         max = disappear,
+        signed = signed,
+        opponent_ahead = opponent_ahead,
     }
 end
 

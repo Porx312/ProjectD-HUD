@@ -254,13 +254,6 @@ function status.get_status()
             state.battle_ui ~= nil and state.battle_ui.state or state.battle_last_debug_stage
         ),
 
-        snapshot_poll_sec = state.snapshot_poll_interval_sec or 0,
-
-        synthetic_lobby = (state.battle_ui ~= nil and state.battle_ui.is_lobby == true)
-            or (state.battle_ui == nil
-                and util.safe_str(state.hud_transport) == "poll"
-                and bundled ~= nil),
-
         battle_snap_at = state.battle_last_snapshot_at or 0,
 
         battle_event_name = util.safe_str(state.battle_last_event_name),
@@ -396,12 +389,6 @@ function status.get_status_message(kind)
         if state.battle_last_error == "sse_stalled" then
 
             return "Battle SSE stalled - reconnecting"
-
-        end
-
-        if st.battle_stage ~= "" then
-
-            return "Battle debug: " .. st.battle_stage
 
         end
 

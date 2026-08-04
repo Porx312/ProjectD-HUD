@@ -313,7 +313,7 @@ function mock.get_battle()
         score_right = 1,
         show_scores = true,
         show_gap = true,
-        gap = { current = 125, max = 250 },
+        gap = { current = 125, max = 250, signed = -125, opponent_ahead = false },
         gap3d_m = 125,
         disappear_gap_m = 250,
         event_label = "OVERTAKE +1",
