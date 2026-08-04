@@ -199,6 +199,14 @@ function phases.build_display(ui, resolve_winner_display)
             local fallback = tostring(ui.center_text or ui.mode or "")
             if fallback ~= "" then center_label = fallback end
         end
+    elseif center_key == "vs" then
+        center_label = util.safe_str(ui.center_text) ~= "" and tostring(ui.center_text) or "VS"
+    elseif center_key == "matchmaking" then
+        center_label = util.safe_str(ui.center_text) ~= "" and tostring(ui.center_text) or "MATCHMAKING"
+    elseif center_key == "points" and not is_terminal then
+        center_label = util.safe_str(ui.center_text) ~= "" and tostring(ui.center_text) or "ACTIVE"
+    elseif is_terminal and center_text ~= "" then
+        center_label = center_text
     end
 
     return {

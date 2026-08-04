@@ -197,7 +197,7 @@ function mock.get_competition_ladder(_car_filter)
     }
 end
 
---- Battle HUD mock — ac.storage("ProjectD-HUD:battle_mock_state", "matchmaking"|"vs"|"countdown"|"active"|"cancelled"|"result"|"draw")
+--- Battle HUD mock — ac.storage("ProjectD-HUD:battle_mock_state", "matchmaking"|"vs"|"countdown"|"active"|"lead"|"chase"|"cancelled"|"result"|"draw")
 local battle_parse = require("common.api.battle_parse")
 
 local function with_battle_display(battle)
@@ -301,6 +301,56 @@ function mock.get_battle()
             score_left = 0,
             score_right = 0,
             player_left = player_left,
+            player_right = player_right,
+        })
+    end
+
+    if key == "lead" then
+        local lead_left = {
+            name = "Takumi",
+            car_name = "ae86",
+            tier = 10,
+            elo = 1380,
+            avatar_url = avatar("Takumi Fujiwara"),
+            role = "lead",
+        }
+        return with_battle_display({
+            state = "active",
+            center_text = "LEAD",
+            mode = "LEAD",
+            score_left = 1,
+            score_right = 0,
+            show_scores = true,
+            show_gap = true,
+            gap = { current = 42, max = 250, signed = 42, opponent_ahead = false },
+            gap3d_m = 42,
+            disappear_gap_m = 250,
+            player_left = lead_left,
+            player_right = player_right,
+        })
+    end
+
+    if key == "chase" then
+        local chase_left = {
+            name = "Takumi",
+            car_name = "ae86",
+            tier = 10,
+            elo = 1380,
+            avatar_url = avatar("Takumi Fujiwara"),
+            role = "chase",
+        }
+        return with_battle_display({
+            state = "active",
+            center_text = "CHASE",
+            mode = "CHASE",
+            score_left = 0,
+            score_right = 1,
+            show_scores = true,
+            show_gap = true,
+            gap = { current = 88, max = 250, signed = -88, opponent_ahead = true },
+            gap3d_m = 88,
+            disappear_gap_m = 250,
+            player_left = chase_left,
             player_right = player_right,
         })
     end

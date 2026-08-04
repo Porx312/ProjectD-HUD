@@ -122,7 +122,27 @@ Verificar perfil completo (requiere estar **dentro** del server online):
 
 Debe imprimir `OK: hud_session received` con rank/elo/tier.
 
-HTTPS SSE uses **TCP+TLS** first (`battle_sse_tcp.lua`); `web.get` is fallback only.
+HTTPS SSE uses **TCP+TLS** first (`battle_sse_tcp.lua`); without `socket`+`luasec`, the client falls back to **GET /hud/snapshot** poll.
+
+### Transport matrix (SSE vs poll)
+
+| Mode | Requirements | Typical latency | Battle gap | Lap PB |
+|------|--------------|-----------------|------------|--------|
+| **tcp** | CSP + Lua `socket` + `luasec` (HTTPS) | &lt;500 ms battle, &lt;1 s lap ms | Live snapshots | Immediate partial SSE after lap |
+| **poll** | Any CSP (no TLS module) | 2–5 s (+ server debounce) | Interpolated gap bar | 3–7 s rank/rivals |
+| **off** | Offline / mock | — | Mock states only | Mock data |
+
+Diagnostics:
+
+```bash
+# Full local + optional live stack
+HUD_E2E_SKIP_LIVE=1 ./scripts/verify-hud-e2e.sh YOUR_STEAM_ID
+
+# In-game transport badge (dev)
+ac.storage("ProjectD-HUD:show_transport", true):set()
+```
+
+Battle gap mock (offline): `ac.storage("ProjectD-HUD:battle_mock_state", "lead"):set()` or `"chase"`.
 
 Mocks offline: `ac.storage("ProjectD-HUD:use_api", false):set()`
 

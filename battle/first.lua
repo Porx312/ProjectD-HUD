@@ -47,9 +47,6 @@ function mod.update() end
 
 function mod.main(dt)
     theme.ensure_fonts()
-    if data.tick ~= nil then
-        data.tick("global")
-    end
 
     local win_origin = vec2(0, 0)
     local win_size = ui.windowSize()

@@ -33,12 +33,16 @@ function mod.update() end
 
 function mod.main(dt)
     theme.ensure_fonts()
-    if data.tick ~= nil then
-        data.tick("global")
-    end
     local win = ui.windowSize()
 
     draw.card_panel(vec2(0, 0), win)
+
+    if ac.storage("ProjectD-HUD:show_transport", false):get() == true then
+        local hud_transport = require("common.api.battle_transport")
+        local mode = hud_transport.mode(nil, os.clock()) or "off"
+        ui.drawRectFilled(vec2(4, 4), vec2(52, 18), rgbm(0, 0, 0, 0.65))
+        ui.dwriteDrawText(mode, 9, vec2(6, 5), rgbm(0.9, 0.9, 0.9, 1))
+    end
 
     if data.is_account_restricted ~= nil and data.is_account_restricted() then
         draw.center_status_message(vec2(0, 0), win, "Account restricted")

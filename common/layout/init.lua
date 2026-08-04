@@ -7,7 +7,6 @@ local modules = {
     "common.layout.profile",
     "common.layout.competition",
     "common.layout.battle",
-    "common.layout.leaderboard",
 }
 
 for _, path in ipairs(modules) do

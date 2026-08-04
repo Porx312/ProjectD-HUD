@@ -4,7 +4,6 @@ local draw = {}
 
 local modules = {
     "common.draw.shared",
-    "common.draw.leaderboard",
     "common.draw.competition.init",
     "common.draw.profile",
 }

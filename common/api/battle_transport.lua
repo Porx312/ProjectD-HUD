@@ -143,6 +143,43 @@ function hud_transport.tick(ctx, now)
     end
 end
 
+function hud_transport.mode(_ctx, _now)
+    if battle_sse.is_active() and util.safe_str(state.hud_transport) == "tcp" then
+        return "tcp"
+    end
+    if util.safe_str(state.hud_transport) == "poll" then
+        return "poll"
+    end
+    if battle_sse.is_active() then
+        return "tcp"
+    end
+    if state.cached_bundle ~= nil or state.snapshot_inflight then
+        return "poll"
+    end
+    return "off"
+end
+
+function hud_transport.is_live(_ctx, now)
+    now = now or os.clock()
+    if battle_sse.is_active() then
+        local last = state.battle_sse_last_activity_at or state.battle_sse_connected_at or 0
+        if last > 0 and (now - last) <= (config.HUD_SSE_LIVE_SEC or 5) then
+            return true
+        end
+        if state.hud_transport == "tcp" then
+            return true
+        end
+    end
+    return false
+end
+
+function hud_transport.session_age(_ctx, now)
+    now = now or os.clock()
+    local at = tonumber(state.cached_at) or 0
+    if at <= 0 then return nil end
+    return now - at
+end
+
 function hud_transport.reset()
     battle_sse.disconnect()
     battle_fetch.reset()

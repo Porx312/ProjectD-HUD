@@ -1,4 +1,4 @@
---[[ SSE client: TCP stream (primary) + web.get fallback. ]]
+--[[ SSE client: TCP stream (primary). CSP 0.2.x cannot stream HTTPS via web.get — use snapshot poll fallback. ]]
 
 local config = require("common.config")
 local state = require("common.api.state")
@@ -179,173 +179,6 @@ function battle_sse.feed(chunk, ctx)
     state.battle_sse_buffer = buffer
 end
 
-local function on_stream_chunk(chunk, ctx)
-    if chunk == nil then return end
-    state.battle_sse_connected = true
-    state.battle_sse_stream_pending = false
-    if type(chunk) == "table" then
-        local body = util.response_body(chunk)
-        if body ~= nil and body ~= "" then
-            battle_sse.feed(body, ctx)
-        end
-        return
-    end
-    if type(chunk) == "string" and chunk ~= "" then
-        battle_fetch.debug("sse chunk " .. tostring(#chunk) .. "b")
-        battle_sse.feed(chunk, ctx)
-    end
-end
-
-local function on_stream_closed(err, response, ctx)
-    if state.battle_sse_mode == "tcp" then return end
-
-    state.battle_sse_connected = false
-    state.battle_sse_stream_pending = false
-    state.battle_sse_buffer = ""
-    state.battle_sse_last_body_len = 0
-
-    local now = os.clock()
-    local reconnect = config.HUD_SSE_RECONNECT_SEC or 3
-
-    if util.is_web_error(err) then
-        state.battle_last_error = "network_error"
-        battle_fetch.debug("sse closed err=" .. tostring(err))
-    else
-        local _, err_reason = util.read_api_response(err, response)
-        if err_reason ~= nil then
-            if util.should_ignore_error(err_reason) then
-                battle_fetch.debug("sse ignored: " .. tostring(err_reason))
-            elseif util.ignore_presence_error(err_reason) then
-                battle_fetch.debug("sse presence ignored: " .. tostring(err_reason))
-            else
-                state.battle_last_error = err_reason
-                state.last_error = err_reason
-                battle_fetch.debug("sse closed reason=" .. tostring(err_reason))
-            end
-        else
-            local code = util.http_status_code(response)
-            if code ~= nil and code ~= 200 then
-                state.battle_last_error = "http_" .. tostring(code)
-                if code == 404 then
-                    state.last_error = "player_not_connected"
-                end
-                battle_fetch.debug("sse closed http=" .. tostring(code))
-            else
-                battle_fetch.debug("sse closed (reconnect in " .. tostring(reconnect) .. "s)")
-            end
-        end
-    end
-
-    local block_reconnect = util.is_battle_fatal(state.battle_last_error)
-        and not (util.is_presence_fatal(state.battle_last_error) and battle_fetch.is_session_live(now))
-    if block_reconnect then
-        state.battle_sse_reconnect_at = math.huge
-    else
-        state.battle_sse_reconnect_at = now + reconnect
-    end
-
-    if ctx ~= nil and ctx._sse_on_close ~= nil then
-        pcall(ctx._sse_on_close, err, response)
-    end
-end
-
-local function on_stream_response(err, response, ctx, item)
-    if util.is_web_error(err) then
-        on_stream_closed(err, response, ctx)
-        return
-    end
-
-    local code = util.http_status_code(response)
-    if code ~= nil and code ~= 200 then
-        local _, err_reason = util.read_api_response(err, response)
-        if err_reason ~= nil and not util.should_ignore_error(err_reason) and not util.ignore_presence_error(err_reason) then
-            state.battle_last_error = err_reason
-            state.last_error = err_reason
-        elseif code == 404 then
-            state.battle_last_error = "http_404"
-            state.last_error = "player_not_connected"
-        end
-        on_stream_closed(err, response, ctx)
-        return
-    end
-
-    state.battle_sse_connected = true
-    state.battle_sse_stream_pending = false
-    state.battle_last_error = nil
-    state.battle_sse_last_activity_at = os.clock()
-
-    local body = util.response_body(response)
-    if body == nil or body == "" then return end
-
-    local prev_len = state.battle_sse_last_body_len or 0
-    local total_len = #body
-    if total_len > prev_len then
-        local delta = body:sub(prev_len + 1)
-        state.battle_sse_last_body_len = total_len
-        battle_sse.feed(delta, ctx)
-    end
-
-    if response ~= nil and response.complete == false then return end
-    if response ~= nil and response.finished == false then return end
-    if item ~= nil and item.expect_persistent == true then return end
-
-    on_stream_closed(nil, response, ctx)
-end
-
-local function connect_web(url, ctx)
-    if state.battle_sse_stream_pending or (state.battle_sse_connected and state.web_stream ~= nil) then
-        return false
-    end
-
-    state.battle_sse_stream_pending = true
-    state.battle_sse_buffer = ""
-    state.battle_sse_last_body_len = 0
-    state.battle_sse_mode = "web"
-    state.battle_sse_web_stall_at = 0
-    state.battle_sse_last_activity_at = 0
-    state.last_fetch_url = url
-    battle_fetch.debug("hud sse web connect " .. url)
-
-    local item = {
-        url = url,
-        kind = "hud_sse",
-        expect_persistent = true,
-        ctx = ctx,
-        callbacks = {
-            on_open = function()
-                state.battle_sse_connected = true
-                state.battle_sse_stream_pending = false
-                state.battle_last_error = nil
-                battle_fetch.debug("hud sse web stream open")
-            end,
-            on_chunk = function(chunk)
-                on_stream_chunk(chunk, ctx)
-            end,
-            on_response = function(err, response)
-                on_stream_response(err, response, ctx, item)
-            end,
-            on_complete = function(err, response)
-                on_stream_closed(err, response, ctx)
-            end,
-        },
-    }
-
-    local opened = web_queue.open_stream(item)
-    if not opened then
-        state.battle_sse_stream_pending = false
-        state.battle_sse_mode = nil
-        battle_fetch.debug("sse web deferred (web busy)")
-        return false
-    end
-
-    state.battle_sse_connected = true
-    state.battle_sse_stream_pending = false
-    state.battle_sse_connected_at = os.clock()
-    return true
-end
-
-local WEB_SSE_STALL_SEC = 8
-
 local function try_tcp_connect(url, ctx)
     if not battle_sse_tcp.can_connect(url) then
         return false
@@ -392,48 +225,13 @@ end
 function battle_sse.poll()
     if state.battle_sse_mode == "tcp" then
         battle_sse_tcp.poll(battle_sse.feed)
-        return
     end
-
-    web_queue.poll_stream()
-
-    if state.battle_sse_mode ~= "web" or not state.battle_sse_connected then
-        return
-    end
-
-    local now = os.clock()
-    local connected_at = state.battle_sse_connected_at or 0
-    local last_activity = state.battle_sse_last_activity_at or 0
-    if connected_at <= 0 or last_activity > 0 then return end
-    if (now - connected_at) < WEB_SSE_STALL_SEC then return end
-    if (state.battle_sse_web_stall_at or 0) >= connected_at then return end
-
-    state.battle_sse_web_stall_at = now
-    local url = util.safe_str(state.last_fetch_url)
-    local ctx = state.battle_sse_ctx
-    battle_fetch.debug("sse web stalled — retry tcp")
-
-    if url ~= "" and ctx ~= nil and battle_sse_tcp.can_connect(url) then
-        battle_sse.disconnect()
-        state.battle_sse_reconnect_at = 0
-        state.battle_sse_connected_at = 0
-        if try_tcp_connect(url, ctx) then
-            state.hud_transport = "tcp"
-            return
-        end
-        state.battle_sse_reconnect_at = now + (config.HUD_SSE_RECONNECT_SEC or 3)
-        return
-    end
-
-    -- HTTPS without TLS module: keep web slot open; snapshot poll supplies profile data.
-    battle_fetch.debug("sse web stalled — waiting for snapshot poll (no tls)")
 end
 
 function battle_sse.is_active()
     return battle_sse_tcp.is_active()
         or state.battle_sse_connected == true
         or state.battle_sse_stream_pending == true
-        or state.web_stream ~= nil
 end
 
 return battle_sse
