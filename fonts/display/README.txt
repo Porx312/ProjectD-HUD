@@ -1,23 +1,18 @@
-Display fonts — Google Fonts (SIL Open Font License)
+Display fonts — Google Fonts (SIL Open Font License) + Minecraft Ten
 
-Used for player/rival display_style names (fontId registry v1):
-- Rajdhani (Regular, SemiBold, Bold)
-- Orbitron (variable)
-- Teko (variable)
-- Bebas Neue (Regular)
-- Oxanium (variable)
-- Chakra Petch (Regular, SemiBold, Bold)
-- Audiowide (Regular)
+Registry v2 (matches web DISPLAY_NAME_FONT_OPTIONS):
+- rajdhani (Touge)
+- orbitron (Neon HUD)
+- bebas (Poster)
+- minecraft_ten (Minecraft) — MinecraftTen.ttf, not on Google Fonts
+- medievalsharp (Medieval)
+- cinzel (Cinzel)
+- permanent_marker (Marker)
+- zen_kaku (Zen Kaku)
 
-License: see OFL.txt in this folder.
-
-Refresh fonts:
+Refresh:
   ./scripts/download-display-fonts.sh
 
-v1 limitations (see common/display_style.lua):
-- Gradient/chrome effects are static DWrite approximations, not identical to web CSS.
-- Animated effects (taillight pulse, speed skew) render as static.
-- italic only when the TTF supports :Italic; otherwise ignored.
-- letterSpacing fine tracking is ignored.
+Minecraft Ten: copy from ProjectD `public/fonts/` or set PROJECTD_MINECRAFT_TEN_TTF=/path/to/MinecraftTen.ttf
 
-Legacy font ids (system, inter, mono, …) map to Rajdhani like the web app.
+Removed fonts (legacy ids map to rajdhani): teko, oxanium, chakra, audiowide

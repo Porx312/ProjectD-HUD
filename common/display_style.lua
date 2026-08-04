@@ -9,14 +9,16 @@ local app_dir = ac.dirname()
 local FONT_DIR = "/fonts/display"
 
 -- v1: letterSpacing fine tracking ignored; animated effects are static approximations.
+-- Font ids match web DISPLAY_NAME_FONT_OPTIONS (ProjectD).
 local FONT_REGISTRY = {
     rajdhani = { family = "Rajdhani", uppercase = true },
     orbitron = { family = "Orbitron", uppercase = true },
-    teko = { family = "Teko", uppercase = true },
     bebas = { family = "Bebas Neue", uppercase = true, regular_only = true },
-    oxanium = { family = "Oxanium", uppercase = true },
-    chakra = { family = "Chakra Petch", uppercase = true },
-    audiowide = { family = "Audiowide", uppercase = true, regular_only = true },
+    minecraft_ten = { family = "Minecraft Ten", uppercase = false, regular_only = true },
+    medievalsharp = { family = "MedievalSharp", uppercase = false, regular_only = true },
+    cinzel = { family = "Cinzel", uppercase = true },
+    permanent_marker = { family = "Permanent Marker", uppercase = false, regular_only = true },
+    zen_kaku = { family = "Zen Kaku Gothic New", uppercase = false },
 }
 
 local WEIGHT_TO_DWRITE = {

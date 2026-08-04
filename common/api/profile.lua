@@ -178,6 +178,22 @@ local LEGACY_FONT_IDS = {
     monospace = true,
     sans = true,
     default = true,
+    teko = true,
+    oxanium = true,
+    chakra = true,
+    chakrapetch = true,
+    audiowide = true,
+}
+
+local VALID_FONT_IDS = {
+    rajdhani = true,
+    orbitron = true,
+    bebas = true,
+    minecraft_ten = true,
+    medievalsharp = true,
+    cinzel = true,
+    permanent_marker = true,
+    zen_kaku = true,
 }
 
 profile.DEFAULT_DISPLAY_NAME_FONT = "rajdhani"
@@ -215,7 +231,10 @@ local function normalize_font_id(raw)
     local id = util.safe_str(raw):lower()
     if id == "" or LEGACY_FONT_IDS[id] then return profile.DEFAULT_DISPLAY_NAME_FONT end
     if id == "bebas_neue" or id == "bebasneue" then return "bebas" end
-    if id == "chakra_petch" or id == "chakrapetch" then return "chakra" end
+    if id == "minecraftten" or id == "minecraft-ten" then return "minecraft_ten" end
+    if id == "permanentmarker" then return "permanent_marker" end
+    if id == "zenkaku" or id == "zen_kaku_gothic" or id == "zen_kaku_gothic_new" then return "zen_kaku" end
+    if not VALID_FONT_IDS[id] then return profile.DEFAULT_DISPLAY_NAME_FONT end
     return id
 end
 
