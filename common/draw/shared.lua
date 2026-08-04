@@ -97,6 +97,27 @@ function M.center_status_message(origin, size, text, opts)
     ui.popDWriteFont()
 end
 
+-- Frame overlay alignment (web FrameAvatar.tsx parity).
+local FRAME_DRAW_SIZE_RATIO = 1.794   -- 138% * scale 1.3
+local FRAME_CENTER_X_RATIO = 0.5
+local FRAME_CENTER_Y_RATIO = 0.3885   -- ~11% above avatar vertical center
+
+local function draw_frame_overlay(pos, size, frame_url)
+    if frame_url == nil or frame_url == "" then return end
+    local tex = images.get_frame(frame_url)
+    if tex == nil then return end
+
+    local draw_size = size * FRAME_DRAW_SIZE_RATIO
+    local center = vec2(
+        pos.x + size * FRAME_CENTER_X_RATIO,
+        pos.y + size * FRAME_CENTER_Y_RATIO
+    )
+    local slot_o = center - vec2(draw_size * 0.5, draw_size * 0.5)
+    local slot_sz = vec2(draw_size, draw_size)
+    local draw_o, draw_wh = images.contain_rect(slot_o, slot_sz, tex)
+    ui.drawImage(tex, draw_o, draw_o + draw_wh, theme.colors.white)
+end
+
 function M.avatar_circle(pos, url, size, ring_color)
     if pos == nil then return end
     size = math.max(4, math.floor(tonumber(size) or 32) + 0.5)
@@ -127,11 +148,16 @@ function M.avatar_circle(pos, url, size, ring_color)
     ui.drawCircle(center, radius, ring, segs, math.max(1.5, size * 0.028))
 end
 
-function M.avatar_with_tier(pos, url, size, tier, ring_color, tier_sz)
+function M.avatar_with_frame(pos, avatar_url, frame_url, size, ring_color)
+    M.avatar_circle(pos, avatar_url, size, ring_color)
+    draw_frame_overlay(pos, size, frame_url)
+end
+
+function M.avatar_with_tier(pos, url, size, tier, ring_color, tier_sz, frame_url)
     if pos == nil then return end
     size = math.max(4, math.floor(tonumber(size) or 32) + 0.5)
     tier_sz = math.max(8, math.floor(tonumber(tier_sz) or size * 0.44))
-    M.avatar_circle(pos, url, size, ring_color)
+    M.avatar_with_frame(pos, url, frame_url, size, ring_color)
     local tier_x = pos.x + (size - tier_sz) * 0.5
     local tier_y = pos.y + size - tier_sz * 0.72
     M.tier_badge(vec2(tier_x, tier_y), tier, tier_sz)

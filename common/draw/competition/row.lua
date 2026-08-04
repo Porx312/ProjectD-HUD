@@ -4,6 +4,7 @@ local theme = require("common.theme")
 local images = require("common.images")
 local layout = require("common.layout")
 local profile = require("common.api.profile")
+local display_style = require("common.display_style")
 local shared = require("common.draw.shared")
 local helpers = require("common.draw.competition.helpers")
 local card = require("common.draw.competition.card")
@@ -73,7 +74,8 @@ function M.draw_row(origin, entry, opts)
         avatar_sz,
         profile.tier_for_display(entry),
         helpers.avatar_ring(slot_index, is_self, border_style),
-        tier_sz
+        tier_sz,
+        entry.frame_url
     )
 
     local identity_x = avatar_x + avatar_col_w + avatar_identity_gap
@@ -86,9 +88,7 @@ function M.draw_row(origin, entry, opts)
     local name_col = helpers.text_color(theme.colors.white, text_alpha)
     local car_col = helpers.text_color(theme.colors.muted, text_alpha)
 
-    ui.pushDWriteFont(theme.fonts.bold)
-    name_text, name_fs = shared.truncate_text(name_text, theme.fonts.bold, name_fs, identity_w)
-    ui.popDWriteFont()
+    name_text, name_fs = display_style.truncate_name(entry.display_style, name_text, name_fs, identity_w)
 
     ui.pushDWriteFont(theme.fonts.medium)
     car_text, car_fs = shared.truncate_text(car_text, theme.fonts.medium, car_fs, identity_w)
@@ -101,9 +101,7 @@ function M.draw_row(origin, entry, opts)
     ui.dwriteDrawText(rank_text, rank_label_fs, vec2(identity_x, text_top), rank_color)
     ui.popDWriteFont()
 
-    ui.pushDWriteFont(theme.fonts.bold)
-    ui.dwriteDrawText(name_text, name_fs, vec2(identity_x, text_top + rank_label_fs + 3), name_col)
-    ui.popDWriteFont()
+    display_style.draw_styled_name(entry.display_style, name_text, vec2(identity_x, text_top + rank_label_fs + 3), name_fs, name_col)
 
     ui.pushDWriteFont(theme.fonts.medium)
     ui.dwriteDrawText(

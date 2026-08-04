@@ -36,6 +36,9 @@ local function slot_from_rival(entry)
         car_name = entry.car_name or "",
         avatar_url = entry.avatar_url,
         elo = tonumber(entry.elo),
+        display_style = entry.display_style,
+        frame_url = entry.frame_url,
+        input_type = entry.input_type,
     }
 end
 
@@ -140,6 +143,9 @@ function api.get_player_profile()
             elo = tonumber(p.elo),
             rival = rival,
             rivals = rivals,
+            display_style = p.display_style,
+            frame_url = p.frame_url,
+            input_type = p.input_type,
         }
     end
     if profile_blocked() then return nil end
@@ -160,6 +166,9 @@ function api.get_competition_ladder(_car_filter)
             avatar_url = p.avatar_url,
             elo = p.elo,
             is_self = true,
+            display_style = p.display_style,
+            frame_url = p.frame_url,
+            input_type = p.input_type,
         }
 
         return {

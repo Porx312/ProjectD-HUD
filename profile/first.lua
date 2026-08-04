@@ -18,6 +18,7 @@ function mod.init()
     if p ~= nil then
         avatars_prefetched_for = profile_display.avatar_prefetch_key(p)
         images.prefetch_avatar(p.name, p.avatar_url)
+        images.prefetch_frame(p.frame_url)
     end
 end
 
@@ -60,6 +61,7 @@ function mod.main(dt)
         if avatars_prefetched_for ~= prefetch_key then
             avatars_prefetched_for = prefetch_key
             images.prefetch_avatar(profile.name, profile.avatar_url)
+            images.prefetch_frame(profile.frame_url)
         end
         draw.profile_block(vec2(0, 0), win, profile, {
             highlights = profile_display.get_highlights(),

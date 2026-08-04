@@ -144,7 +144,7 @@ function profile.display_lap_ms(value)
     return tonumber(p.best_lap_ms) or 0
 end
 
-local function resolve_avatar_url(url)
+local function resolve_media_url(url)
     if url == nil or url == "" then return nil end
     if type(url) == "table" then
         url = pick_field(url, "url", "href", "src", "imageUrl", "image_url", "avatarUrl", "avatar_url")
@@ -156,6 +156,180 @@ local function resolve_avatar_url(url)
         return config.API_BASE_URL .. url
     end
     return config.API_BASE_URL .. "/" .. url
+end
+
+local function resolve_avatar_url(url)
+    return resolve_media_url(url)
+end
+
+local function resolve_frame_url(url)
+    return resolve_media_url(url)
+end
+
+local LEGACY_FONT_IDS = {
+    system = true,
+    inter = true,
+    mono = true,
+    monospace = true,
+    sans = true,
+    default = true,
+}
+
+profile.DEFAULT_DISPLAY_NAME_FONT = "rajdhani"
+profile.DEFAULT_DISPLAY_NAME_FONT_WEIGHT = "bold"
+
+profile.DISPLAY_NAME_LETTER_SPACING_ALLOWLIST = {
+    "default", "tight", "normal", "wide", "wider", "widest",
+}
+
+local VALID_LETTER_SPACING = {
+    default = true,
+    tight = true,
+    normal = true,
+    wide = true,
+    wider = true,
+    widest = true,
+}
+
+local VALID_EFFECT_IDS = {
+    solid = true,
+    gradient = true,
+    taillight = true,
+    chrome = true,
+    decal = true,
+    speed = true,
+}
+
+local VALID_INPUT_TYPES = {
+    wheel = true,
+    controller = true,
+    keyboard = true,
+}
+
+local function normalize_font_id(raw)
+    local id = util.safe_str(raw):lower()
+    if id == "" or LEGACY_FONT_IDS[id] then return profile.DEFAULT_DISPLAY_NAME_FONT end
+    if id == "bebas_neue" or id == "bebasneue" then return "bebas" end
+    if id == "chakra_petch" or id == "chakrapetch" then return "chakra" end
+    return id
+end
+
+local function normalize_weight(raw, font_id)
+    local w = util.safe_str(raw):lower()
+    if w == "" then
+        return profile.DEFAULT_DISPLAY_NAME_FONT_WEIGHT
+    end
+    if w == "normal" then return "regular" end
+    if w == "medium" then return "semibold" end
+    if w == "regular" or w == "semibold" or w == "bold" or w == "black" then
+        return w
+    end
+    return profile.DEFAULT_DISPLAY_NAME_FONT_WEIGHT
+end
+
+local function normalize_letter_spacing(raw)
+    local spacing = util.safe_str(raw):lower()
+    if spacing == "" or not VALID_LETTER_SPACING[spacing] then
+        return "default"
+    end
+    return spacing
+end
+
+local function default_display_style()
+    return {
+        fontId = profile.DEFAULT_DISPLAY_NAME_FONT,
+        effectId = "solid",
+        color = "#FFFFFF",
+        gradientColor = nil,
+        weight = profile.DEFAULT_DISPLAY_NAME_FONT_WEIGHT,
+        italic = false,
+        letterSpacing = "default",
+    }
+end
+
+local function is_nested_display_style(tbl)
+    if tbl == nil or type(tbl) ~= "table" then return false end
+    return pick_field(tbl, "fontId", "font_id", "font") ~= nil
+        or pick_field(tbl, "effectId", "effect_id", "effect") ~= nil
+        or pick_field(tbl, "color", "textColor", "text_color") ~= nil
+        or pick_field(tbl, "gradientColor", "gradient_color", "secondaryColor", "secondary_color") ~= nil
+        or pick_field(tbl, "weight", "fontWeight", "font_weight") ~= nil
+        or tbl.italic == true or tbl.isItalic == true or tbl.is_italic == true
+        or pick_field(tbl, "letterSpacing", "letter_spacing") ~= nil
+end
+
+local function unwrap_display_style_source(raw)
+    if raw == nil or type(raw) ~= "table" then return nil end
+    if type(raw.display_style) == "table" then return raw.display_style end
+    if type(raw.displayStyle) == "table" then return raw.displayStyle end
+    if is_nested_display_style(raw) then return raw end
+    return nil
+end
+
+function profile.normalize_display_style(raw)
+    local style = default_display_style()
+    local src = unwrap_display_style_source(raw)
+    if src == nil or type(src) ~= "table" then
+        return style
+    end
+
+    style.fontId = normalize_font_id(pick_field(src, "fontId", "font_id", "font"))
+    local effect = util.safe_str(pick_field(src, "effectId", "effect_id", "effect")):lower()
+    if effect ~= "" and VALID_EFFECT_IDS[effect] then
+        style.effectId = effect
+    end
+
+    local color = util.safe_str(pick_field(src, "color", "textColor", "text_color"))
+    if color ~= "" then style.color = color end
+
+    if style.effectId == "gradient" then
+        local gradient = util.safe_str(pick_field(src, "gradientColor", "gradient_color", "secondaryColor", "secondary_color"))
+        if gradient ~= "" then style.gradientColor = gradient end
+    else
+        style.gradientColor = nil
+    end
+
+    style.weight = normalize_weight(pick_field(src, "weight", "fontWeight", "font_weight"), style.fontId)
+    style.italic = src.italic == true or src.isItalic == true or src.is_italic == true
+    style.letterSpacing = normalize_letter_spacing(pick_field(src, "letterSpacing", "letter_spacing"))
+
+    return style
+end
+
+function profile.normalize_input_type(raw)
+    if raw == nil then return nil end
+    if type(raw) == "table" then
+        raw = pick_field(raw, "input_type", "inputType", "device", "type")
+    end
+    local t = util.safe_str(raw):lower()
+    if t == "" or not VALID_INPUT_TYPES[t] then return nil end
+    return t
+end
+
+local function pick_display_style_raw(tbl)
+    if tbl == nil or type(tbl) ~= "table" then return nil end
+    if type(tbl.display_style) == "table" then return tbl.display_style end
+    if type(tbl.displayStyle) == "table" then return tbl.displayStyle end
+    return nil
+end
+
+local function pick_frame_raw(tbl)
+    if tbl == nil or type(tbl) ~= "table" then return nil end
+    return pick_field(tbl, "frame_url", "frameUrl", "frame", "avatar_frame_url", "avatarFrameUrl")
+end
+
+local function pick_input_type_raw(tbl)
+    if tbl == nil or type(tbl) ~= "table" then return nil end
+    return pick_field(tbl, "input_type", "inputType", "input_device", "inputDevice")
+end
+
+local function apply_cosmetic_fields(into, src)
+    if into == nil or src == nil or type(src) ~= "table" then return end
+    into.display_style = profile.normalize_display_style(src)
+    local frame = resolve_frame_url(pick_frame_raw(src))
+    if frame ~= nil then into.frame_url = frame end
+    local input_type = profile.normalize_input_type(pick_input_type_raw(src))
+    if input_type ~= nil then into.input_type = input_type end
 end
 
 local function pick_avatar_raw(tbl)
@@ -289,6 +463,8 @@ local function overlay_session_profile_fields(merged, prof)
     if car_name ~= "" then merged.car_name = car_name end
     local car_id = util.safe_str(pick_field(prof, "car_id", "carId", "carModel", "vehicleId"))
     if car_id ~= "" then merged.car_id = car_id end
+
+    apply_cosmetic_fields(merged, prof)
 end
 
 local function apply_time_attack_sources(merged, raw)
@@ -404,7 +580,7 @@ function profile.normalize_rival_entry(entry)
     local name = util.safe_str(pick_field(entry, "name", "displayName", "display_name"))
     local rank = tonumber(pick_field(entry, "rank", "position"))
     if name == "" and rank == nil then return nil end
-    return {
+    local normalized = {
         rank = rank or 0,
         name = name ~= "" and name or "?",
         tier = profile.tier_for_display(entry),
@@ -415,7 +591,13 @@ function profile.normalize_rival_entry(entry)
         car_id = util.safe_str(pick_field(entry, "car_id", "carId", "carModel")),
         avatar_url = resolve_avatar_url(pick_avatar_raw(entry)),
         elo = tonumber(pick_field(entry, "elo", "mmr", "rating")),
+        display_style = profile.normalize_display_style(entry),
     }
+    local frame = resolve_frame_url(pick_frame_raw(entry))
+    if frame ~= nil then normalized.frame_url = frame end
+    local input_type = profile.normalize_input_type(pick_input_type_raw(entry))
+    if input_type ~= nil then normalized.input_type = input_type end
+    return normalized
 end
 
 --- True when the API returned board stats (not just account name/avatar).
@@ -473,7 +655,7 @@ function profile.normalize_profile(value, rivals_source)
     if src == nil and type(value.rivals) == "table" then src = value end
     local rivals = profile.normalize_rivals(src)
 
-    return {
+    local result = {
         name = name ~= "" and name or "?",
         rank = rank or 0,
         tier = tier or 0,
@@ -488,7 +670,13 @@ function profile.normalize_profile(value, rivals_source)
         rival = rivals.above,
         isInvalidated = invalidated,
         rivals = rivals,
+        display_style = profile.normalize_display_style(value),
     }
+    local frame = resolve_frame_url(pick_frame_raw(value))
+    if frame ~= nil then result.frame_url = frame end
+    local input_type = profile.normalize_input_type(pick_input_type_raw(value))
+    if input_type ~= nil then result.input_type = input_type end
+    return result
 end
 
 function profile.coalesce_from_api(raw)

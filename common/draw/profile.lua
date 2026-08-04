@@ -3,6 +3,8 @@
 local theme = require("common.theme")
 local layout = require("common.layout")
 local profile = require("common.api.profile")
+local display_style = require("common.display_style")
+local images = require("common.images")
 local shared = require("common.draw.shared")
 
 local M = {}
@@ -28,7 +30,8 @@ local function measure_text_column(entry, opts, m)
     local car_mid = car_name .. " - "
     local time_str = theme.format_lap(entry.lap_ms or entry.last_lap_ms or entry.best_lap_ms)
 
-    local name_sz = shared.measure_dwrite(theme.fonts.bold, name_text, m.name_fs)
+    local name_sz = display_style.measure_styled_name(entry.display_style, name_text, m.name_fs)
+    name_sz = select(1, name_sz) or vec2(0, m.name_fs)
     local sub_sz = shared.measure_dwrite(theme.fonts.medium, rank_str .. car_mid .. time_str, m.sub_fs)
     local tier_w = math.max(14, m.tier) + m.name_tier_gap
     local name_row_w = name_sz.x + tier_w
@@ -54,7 +57,7 @@ function M.profile_card(panel_o, panel_size, entry, opts)
     theme.ensure_fonts()
     opts = opts or {}
     local m = profile_metrics_from_opts(opts)
-    local url = require("common.images").resolve_url(entry.name, entry.avatar_url)
+    local url = images.resolve_url(entry.name, entry.avatar_url)
     local pad = layout.CARD_EDGE_PAD
     local hl = opts.highlights or {}
 
@@ -65,11 +68,9 @@ function M.profile_card(panel_o, panel_size, entry, opts)
     local tx = panel_o.x + pad + m.avatar + m.avatar_gap
     local text_y = panel_o.y + (panel_size.y - text_h) * 0.5
 
-    shared.avatar_circle(avatar_pos, url, m.avatar)
+    shared.avatar_with_frame(avatar_pos, url, entry.frame_url, m.avatar)
 
-    ui.pushDWriteFont(theme.fonts.bold)
-    ui.dwriteDrawText(name_text, m.name_fs, vec2(tx, text_y), theme.colors.white)
-    ui.popDWriteFont()
+    display_style.draw_styled_name(entry.display_style, name_text, vec2(tx, text_y), m.name_fs)
 
     local tier_n = profile.tier_for_display(entry)
     local tier_x = tx + name_sz.x + m.name_tier_gap
@@ -100,6 +101,15 @@ function M.profile_card(panel_o, panel_size, entry, opts)
     ui.dwriteDrawText(car_mid, m.sub_fs, vec2(sub_x, sub_y), theme.colors.white)
     sub_x = sub_x + shared.measure_text(theme.fonts.medium, car_mid, m.sub_fs)
     ui.dwriteDrawText(time_str, m.sub_fs, vec2(sub_x, sub_y), blend_toward_accent(theme.colors.accent, hl.time))
+    sub_x = sub_x + shared.measure_text(theme.fonts.medium, time_str, m.sub_fs)
+    if images.draw_input_icon(
+        vec2(sub_x + 4, sub_y + (m.sub_fs - 14) * 0.5),
+        entry.input_type,
+        math.max(12, math.min(14, m.sub_fs)),
+        theme.colors.muted
+    ) then
+        sub_x = sub_x + 18
+    end
     ui.popDWriteFont()
 end
 

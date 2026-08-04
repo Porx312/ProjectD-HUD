@@ -9,6 +9,11 @@ local avatar_textures = {}   ---@type table<string, ui.ImageSource|string|false|
 local avatar_loading = {}    ---@type table<string, boolean>
 local avatar_pending = {}    ---@type table<string, boolean>
 local avatar_failed_at = {}  ---@type table<string, number>
+
+local frame_textures = {}    ---@type table<string, ui.ImageSource|string|false|nil>
+local frame_loading = {}     ---@type table<string, boolean>
+local frame_pending = {}     ---@type table<string, boolean>
+local frame_failed_at = {}   ---@type table<string, number>
 local AVATAR_RETRY_SEC = 12
 
 local function profile_pending()
@@ -74,6 +79,79 @@ function images.prefetch_avatar(name, url)
     end
 end
 
+function images.prefetch_frame(url)
+    if url == nil or url == "" then return end
+    images.request_frame(url)
+end
+
+local function decode_url_texture(url, textures, loading, pending, failed_at, kind, on_done)
+    if url == nil or url == "" then return end
+    if profile_pending() then
+        pending[url] = true
+        return
+    end
+    local cached = textures[url]
+    if cached ~= nil and cached ~= false then return end
+    if loading[url] then return end
+    if cached == false then
+        local failed_time = failed_at[url] or 0
+        if (os.clock() - failed_time) < AVATAR_RETRY_SEC then return end
+        textures[url] = nil
+    end
+    if web_slots_full() then
+        pending[url] = true
+        return
+    end
+    loading[url] = true
+
+    local ok_util, util = pcall(require, "common.api.util")
+    local ok_wq, web_queue = pcall(require, "common.api.web_queue")
+    local function on_response(err, response)
+        loading[url] = false
+        local ok_http = ok_util and util.http_response_ok(response)
+            or (response ~= nil and (response.status == nil or response.status == 200))
+        if ok_util and util.is_web_error(err) then ok_http = false end
+        if err ~= nil and ok_util and not util.is_web_error(err) and response == nil then
+            ok_http = true
+            response = { status = 200, body = err }
+        end
+        if not ok_http then
+            textures[url] = false
+            failed_at[url] = os.clock()
+            if on_done ~= nil then on_done(false) end
+            return
+        end
+        local body = ok_util and util.response_body(response) or (response and response.body)
+        if body == nil or body == "" then
+            textures[url] = false
+            failed_at[url] = os.clock()
+            if on_done ~= nil then on_done(false) end
+            return
+        end
+        local ok, tex = pcall(ui.decodeImage, body)
+        if ok and tex ~= nil then
+            textures[url] = tex
+            failed_at[url] = nil
+            if on_done ~= nil then on_done(true, tex) end
+        else
+            textures[url] = false
+            failed_at[url] = os.clock()
+            if on_done ~= nil then on_done(false) end
+        end
+    end
+
+    if ok_wq and web_queue ~= nil and web_queue.get ~= nil then
+        web_queue.get(url, kind or "image", on_response)
+    elseif web ~= nil and web.get ~= nil then
+        web.get(url, on_response)
+    else
+        loading[url] = false
+        textures[url] = false
+        failed_at[url] = os.clock()
+        if on_done ~= nil then on_done(false) end
+    end
+end
+
 function images.get_tier_path(tier)
     local n = math.max(0, math.min(10, math.floor(tonumber(tier) or 0)))
     if tier_textures[n] == nil then
@@ -113,66 +191,11 @@ function images.draw_tier_badge(pos, tier, tier_sz)
 end
 
 function images.request_avatar(url)
-    if url == nil or url == "" then return end
-    if profile_pending() then
-        avatar_pending[url] = true
-        return
-    end
-    local cached = avatar_textures[url]
-    if cached ~= nil and cached ~= false then return end
-    if avatar_loading[url] then return end
-    if cached == false then
-        local failed_at = avatar_failed_at[url] or 0
-        if (os.clock() - failed_at) < AVATAR_RETRY_SEC then return end
-        avatar_textures[url] = nil
-    end
-    if web_slots_full() then
-        avatar_pending[url] = true
-        return
-    end
-    avatar_loading[url] = true
+    decode_url_texture(url, avatar_textures, avatar_loading, avatar_pending, avatar_failed_at, "avatar")
+end
 
-    local ok_util, util = pcall(require, "common.api.util")
-    local ok_wq, web_queue = pcall(require, "common.api.web_queue")
-    local function on_avatar(err, response)
-        avatar_loading[url] = false
-        local ok_http = ok_util and util.http_response_ok(response)
-            or (response ~= nil and (response.status == nil or response.status == 200))
-        if ok_util and util.is_web_error(err) then ok_http = false end
-        if err ~= nil and ok_util and not util.is_web_error(err) and response == nil then
-            ok_http = true
-            response = { status = 200, body = err }
-        end
-        if not ok_http then
-            avatar_textures[url] = false
-            avatar_failed_at[url] = os.clock()
-            return
-        end
-        local body = ok_util and util.response_body(response) or (response and response.body)
-        if body == nil or body == "" then
-            avatar_textures[url] = false
-            avatar_failed_at[url] = os.clock()
-            return
-        end
-        local ok, tex = pcall(ui.decodeImage, body)
-        if ok and tex ~= nil then
-            avatar_textures[url] = tex
-            avatar_failed_at[url] = nil
-        else
-            avatar_textures[url] = false
-            avatar_failed_at[url] = os.clock()
-        end
-    end
-
-    if ok_wq and web_queue ~= nil and web_queue.get ~= nil then
-        web_queue.get(url, "avatar", on_avatar)
-    elseif web ~= nil and web.get ~= nil then
-        web.get(url, on_avatar)
-    else
-        avatar_loading[url] = false
-        avatar_textures[url] = false
-        avatar_failed_at[url] = os.clock()
-    end
+function images.request_frame(url)
+    decode_url_texture(url, frame_textures, frame_loading, frame_pending, frame_failed_at, "frame")
 end
 
 function images.tick()
@@ -186,6 +209,13 @@ function images.tick()
         started = started + 1
         if started >= 2 then break end
     end
+    for pending_url, _ in pairs(frame_pending) do
+        if web_slots_full() then break end
+        frame_pending[pending_url] = nil
+        images.request_frame(pending_url)
+        started = started + 1
+        if started >= 2 then break end
+    end
 end
 
 function images.get_avatar(url)
@@ -194,6 +224,32 @@ function images.get_avatar(url)
     if cached == false then return nil end
     images.request_avatar(url)
     return avatar_textures[url]
+end
+
+function images.get_frame(url)
+    if url == nil or url == "" then return nil end
+    local cached = frame_textures[url]
+    if cached == false then return nil end
+    images.request_frame(url)
+    return frame_textures[url]
+end
+
+function images.get_input_icon(input_type)
+    if input_type == nil or input_type == "" then return nil end
+    local path = app_dir .. "/assets/input/" .. tostring(input_type) .. ".png"
+    if io.fileExists(path) then return path end
+    return nil
+end
+
+--- Dibuja icono de input (wheel/controller/keyboard) si existe el PNG local.
+function images.draw_input_icon(pos, input_type, size, tint)
+    if pos == nil then return false end
+    local path = images.get_input_icon(input_type)
+    if path == nil then return false end
+    size = math.max(10, tonumber(size) or 14)
+    local br = pos + vec2(size, size)
+    ui.drawImage(path, pos, br, tint or rgbm(1, 1, 1, 1))
+    return true
 end
 
 --- UV para recorte tipo "cover" (centra la foto dentro del círculo).

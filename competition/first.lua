@@ -23,6 +23,7 @@ local function ladder_prefetch_key(ladder)
                 .. ":" .. tostring(e.lap_ms or e.best_lap_ms or 0)
                 .. ":" .. tostring(e.name or "")
                 .. ":" .. tostring(e.avatar_url or "")
+                .. ":" .. tostring(e.frame_url or "")
         end
     end
     return table.concat(parts, "|")
@@ -38,6 +39,7 @@ function mod.prefetch_avatars(ladder)
         local e = ladder.slots[i]
         if e ~= nil then
             images.prefetch_avatar(e.name, e.avatar_url)
+            images.prefetch_frame(e.frame_url)
         end
     end
 end

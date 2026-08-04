@@ -2,6 +2,7 @@
 
 local theme = require("common.theme")
 local layout = require("common.layout")
+local images = require("common.images")
 local shared = require("common.draw.shared")
 local helpers = require("common.draw.competition.helpers")
 
@@ -39,8 +40,17 @@ function M.draw_time_block(origin, entry, opts)
     ui.pushDWriteFont(theme.fonts.bold)
     local time_w = shared.measure_text(theme.fonts.bold, time_str, time_fs)
     local time_y = cy - time_fs * 0.5
-    ui.dwriteDrawText(time_str, time_fs, vec2(block_right - time_w, time_y), time_col)
+    local time_x = block_right - time_w
+    ui.dwriteDrawText(time_str, time_fs, vec2(time_x, time_y), time_col)
     ui.popDWriteFont()
+
+    local icon_sz = math.max(11, math.min(13, time_fs))
+    images.draw_input_icon(
+        vec2(time_x - icon_sz - 3, time_y + (time_fs - icon_sz) * 0.5),
+        entry.input_type,
+        icon_sz,
+        helpers.text_color(theme.colors.muted, text_alpha)
+    )
 
     ui.pushDWriteFont(theme.fonts.reg)
     local label = "BEST LAP"

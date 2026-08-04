@@ -23,6 +23,9 @@ local function snapshot(entry)
         name = entry.name,
         display_name = entry.display_name,
         avatar_url = entry.avatar_url,
+        frame_url = entry.frame_url,
+        display_style = entry.display_style,
+        input_type = entry.input_type,
         car_name = entry.car_name,
         car_id = entry.car_id,
         tier = profile_mod.tier_for_display(entry),
@@ -98,6 +101,7 @@ end
 function display.avatar_prefetch_key(entry)
     if entry == nil then return "" end
     return tostring(entry.name or "") .. "|" .. tostring(entry.avatar_url or "")
+        .. "|" .. tostring(entry.frame_url or "")
 end
 
 return display
